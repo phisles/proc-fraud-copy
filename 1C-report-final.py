@@ -4,9 +4,9 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import os
 
 # File paths
-summary_csv = "/Users/philip/Desktop/Code/proc-fraud-pdf/summary_report_with_contacts.csv"
-matches_csv = "/Users/philip/Desktop/Code/proc-fraud-pdf/matches_report.csv"
-output_excel = "/Users/philip/Desktop/Code/proc-fraud-pdf/formatted_report.xlsx"
+summary_csv = "summary_report_with_contacts.csv"
+matches_csv = "matches_report.csv"
+output_excel = "formatted_report.xlsx"
 
 # Load CSVs
 summary_df = pd.read_csv(summary_csv)
