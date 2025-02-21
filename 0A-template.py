@@ -57,7 +57,7 @@ def find_common_text(pdf_files):
             text_count[text] += 1
 
     # Determine threshold (text must appear in at least 80% of PDFs)
-    threshold = max(2, int(0.8 * total_pdfs))
+    threshold = max(2, int(0.6 * total_pdfs))
     print(f"🔍 Inclusion threshold: {threshold} PDFs (out of {total_pdfs})\n")
 
     # Show text frequencies before filtering
