@@ -12,7 +12,7 @@ PROCESSED_DIRECTORY = "./processed_data"
 MATCHES_REPORT_FILE = "matches_report.csv"
 SUMMARY_REPORT_FILE = "summary_report.csv"
 TEXT_SIMILARITY_THRESHOLD = 0.75
-BATCH_SIZE = 6  # Adjust batch size as needed
+BATCH_SIZE = 2  # Adjust batch size as needed
 
 def load_processed_files():
     """Load extracted text and image hashes from JSON files, ignoring `template_text.json`."""
