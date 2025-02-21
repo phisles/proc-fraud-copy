@@ -10,22 +10,32 @@ OUTPUT_DIRECTORY = "./processed_data"
 OUTPUT_TEMPLATE_FILE = os.path.join(OUTPUT_DIRECTORY, "template_text.json")  # Ensure correct path
 
 def extract_text_from_pdf(pdf_path):
-    """Extract text from a PDF file, preserving ordering and showing debug info."""
+    """Extract text from a PDF file, preserving paragraph structure and showing debug info."""
     sentences = []
     print(f"\n📄 Extracting text from: {pdf_path}")
+
+    full_text = []  # Store full text chunks before cleaning
 
     for page_layout in extract_pages(pdf_path):
         for element in page_layout:
             if isinstance(element, LTTextContainer):
                 text = element.get_text().strip()
-                text = clean_text(text)
                 if text:  
-                    sentences.append(text)
+                    full_text.append(text)  # Store full text before cleaning
     
-    print(f"   ✅ Extracted {len(sentences)} lines. Showing first 5 snippets:")
-    for snippet in sentences[:5]:  # Show first 5 lines as a preview
-        print(f"      - {snippet[:50]}...")  # Print truncated version
-    return sentences
+    # Show a preview of raw extracted text before processing
+    print(f"   🔎 Raw extracted text preview (first 5 snippets):")
+    for snippet in full_text[:5]:  # Show first 5 full lines
+        print(f"      - {snippet[:100]}...")  # Print first 100 characters
+
+    # Normalize and preserve ordering
+    cleaned_text = [clean_text(t) for t in full_text]
+
+    print(f"   ✅ Cleaned {len(cleaned_text)} text blocks. Showing first 5:")
+    for snippet in cleaned_text[:5]:  # Show first 5 cleaned lines
+        print(f"      - {snippet[:100]}...")  # Print first 100 characters
+    
+    return cleaned_text
 
 def clean_text(text):
     """Normalize text by removing special characters and whitespace."""
@@ -38,11 +48,11 @@ def find_common_text(pdf_files):
     text_count = defaultdict(int)
     total_pdfs = len(pdf_files)
 
-    print("\n📊 Counting text occurrences across PDFs...\n")
+    print("\n📊 Counting text occurrences across PDFs...")
 
     for pdf_file in pdf_files:
         pdf_path = os.path.join(PDF_DIRECTORY, pdf_file)
-        text_set = set(extract_text_from_pdf(pdf_path))  # Remove duplicates per PDF
+        text_set = set(extract_text_from_pdf(pdf_path))  # Avoid duplicates per PDF
         for text in text_set:
             text_count[text] += 1
 
@@ -50,13 +60,19 @@ def find_common_text(pdf_files):
     threshold = max(2, int(0.8 * total_pdfs))
     print(f"🔍 Inclusion threshold: {threshold} PDFs (out of {total_pdfs})\n")
 
+    # Show text frequencies before filtering
+    print(f"   📌 Top 10 most common extracted text pieces before filtering:")
+    sorted_text = sorted(text_count.items(), key=lambda x: x[1], reverse=True)[:10]
+    for text, count in sorted_text:
+        print(f"      - [{count} PDFs] {text[:100]}...")  # Show first 100 characters
+
     # Filter text that meets the threshold
     common_text = [text for text, count in text_count.items() if count >= threshold]
 
     # Debug: Show first 10 common lines found
     print(f"✅ Found {len(common_text)} common text items. Showing first 10:")
     for snippet in common_text[:10]:
-        print(f"   - {snippet[:50]}...")  # Print truncated version
+        print(f"   - {snippet[:100]}...")  # Print first 100 characters
 
     return common_text
 
