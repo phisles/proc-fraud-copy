@@ -10,14 +10,14 @@ OUTPUT_DIRECTORY = "./processed_data"
 OUTPUT_TEMPLATE_FILE = os.path.join(OUTPUT_DIRECTORY, "template_text.json")  # Ensure correct path
 
 def extract_text_from_pdf(pdf_path):
-    """Extract text from a PDF file and return as a list of normalized sentences."""
-    sentences = set()
+    """Extract text from a PDF file, preserving ordering."""
+    sentences = []
     for page_layout in extract_pages(pdf_path):
         for element in page_layout:
             if isinstance(element, LTTextContainer):
                 text = element.get_text().strip()
                 text = clean_text(text)
-                sentences.update(re.split(r'(?<=[.!?])\s+', text))  # Split into sentences
+                sentences.append(text)  # Preserve ordering
     return sentences
 
 def clean_text(text):
@@ -27,18 +27,21 @@ def clean_text(text):
     return text
 
 def find_common_text(pdf_files):
-    """Identify text that appears in all PDFs."""
-    all_text_sets = []
-    
+    """Identify frequently occurring text across PDFs instead of strict intersection."""
+    text_count = defaultdict(int)
+    total_pdfs = len(pdf_files)
+
     for pdf_file in pdf_files:
         pdf_path = os.path.join(PDF_DIRECTORY, pdf_file)
-        text_set = extract_text_from_pdf(pdf_path)
-        all_text_sets.append(text_set)
+        text_set = set(extract_text_from_pdf(pdf_path))  # Avoid duplicate lines per PDF
+        for text in text_set:
+            text_count[text] += 1  # Count occurrences across PDFs
 
-    # Find intersection (text that appears in all PDFs)
-    common_text = set.intersection(*all_text_sets) if all_text_sets else set()
-    
-    return list(common_text)
+    # Include text that appears in at least 80% of PDFs
+    threshold = max(2, int(0.8 * total_pdfs))
+    common_text = [text for text, count in text_count.items() if count >= threshold]
+
+    return common_text
 
 def main():
     """Run the template text extraction process."""
