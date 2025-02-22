@@ -104,6 +104,10 @@ def find_common_text(pdf_files):
             page_text = clean_page_text(page_text)  # Ensure cleaned version is used
             sentences = [s.strip() for s in re.split(r"(?<=[.!?;:])\s+", page_text) if s.strip()]
 
+            # **Remove First and Last Sentence of Every Paragraph**
+            if len(sentences) > 2:
+                sentences = sentences[1:-1]  # Remove first and last sentence
+
             cleaned_sentences = []
             for sentence in sentences:
                 words = sentence.split()
