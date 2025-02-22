@@ -4,10 +4,23 @@ import re
 from collections import defaultdict
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LTTextContainer
+import string
 
 PDF_DIRECTORY = "./test"
 OUTPUT_DIRECTORY = "./processed_data"
 OUTPUT_TEMPLATE_FILE = os.path.join(OUTPUT_DIRECTORY, "template_text.json")  # Ensure correct path
+
+def is_probable_boilerplate(text):
+    """Detects if text is likely boilerplate using multiple conditions."""
+    if len(text) <= 3:  # Remove very short words/numbers (e.g., "10", "0%")
+        return True
+    if text.lower() in {"yes", "no", "n/a", "true", "false"}:  # Generic words
+        return True
+    if sum(c in string.punctuation for c in text) > 5:  # Too many symbols
+        return True
+    if text.count("[") >= 2 or text.count("]") >= 2:  # Checkbox-style elements
+        return True
+    return False
 
 def extract_text_from_pdf(pdf_path):
     """Extract text from a PDF file, preserving paragraph structure and showing debug info."""
@@ -44,7 +57,7 @@ def clean_text(text):
     return text
 
 def find_common_text(pdf_files):
-    """Identify frequently occurring text across PDFs and automatically remove boilerplate."""
+    """Identify frequently occurring text across PDFs and aggressively remove template text."""
     text_count = defaultdict(int)
     total_pdfs = len(pdf_files)
 
@@ -56,14 +69,14 @@ def find_common_text(pdf_files):
         for text in text_set:
             text_count[text] += 1  # Track occurrences across PDFs
 
-    # Determine automatic boilerplate removal threshold
-    boilerplate_threshold = int(0.9 * total_pdfs)  # If text appears in 90%+ of PDFs, it's boilerplate
-    min_threshold = max(2, int(0.6 * total_pdfs))  # Keep text appearing in at least 60% of PDFs
+    # Set a lower threshold (70%) to remove more template text
+    boilerplate_threshold = int(0.7 * total_pdfs)  # Remove if in 70%+ of PDFs
+    min_threshold = max(2, int(0.6 * total_pdfs))  # Keep only if in at least 60% of PDFs
 
-    # Exclude overly common text (boilerplate)
+    # Remove overly common text (boilerplate) + generic template words
     filtered_text = [
         text for text, count in text_count.items()
-        if min_threshold <= count < boilerplate_threshold
+        if min_threshold <= count < boilerplate_threshold and not is_probable_boilerplate(text)
     ]
 
     # Debug: Show what got filtered
