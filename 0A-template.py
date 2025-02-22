@@ -42,13 +42,15 @@ def extract_text_from_pdf(pdf_path):
 
 # === FIND COMMON TEMPLATE TEXT (SMARTER FILTERING) ===
 def find_common_text(pdf_files):
-    """Identify frequently occurring text across PDFs and remove template portions, keeping unique text."""
+    """Identify frequently occurring text across PDFs and remove headers/footers first before filtering."""
     phrase_count = defaultdict(int)
+    header_footer_count = defaultdict(int)
     text_by_pdf = {}
     total_pdfs = len(pdf_files)
 
     print("\n📊 Counting text occurrences across PDFs...")
 
+    # === STEP 1: EXTRACT TEXT & DETECT COMMON HEADERS/FOOTERS ===
     for pdf_index, pdf_file in enumerate(pdf_files):
         pdf_path = os.path.join(PDF_DIRECTORY, pdf_file)
         print(f"   🟢 Processing PDF {pdf_index+1}/{len(pdf_files)}: {pdf_file}")
@@ -58,26 +60,46 @@ def find_common_text(pdf_files):
 
         for page_text in pages:
             sentences = page_text.split(". ")  # Break into sentences
-            for sentence in sentences:
-                phrase_count[sentence] += 1  # Count occurrences
 
-    # Identify template phrases (appearing in 60%+ of PDFs)
-    template_phrases = {
-        phrase for phrase, count in phrase_count.items() if count >= int(0.6 * total_pdfs)
+            # Detect headers & footers (first and last sentences)
+            if len(sentences) > 2:
+                header_footer_count[sentences[0]] += 1  # First sentence (header)
+                header_footer_count[sentences[-1]] += 1  # Last sentence (footer)
+
+            # Count all text for later phrase-based filtering
+            for sentence in sentences:
+                phrase_count[sentence] += 1  
+
+    # === STEP 2: IDENTIFY COMMON HEADERS/FOOTERS ===
+    header_footer_threshold = int(0.6 * total_pdfs)
+    template_headers_footers = {
+        phrase for phrase, count in header_footer_count.items() if count >= header_footer_threshold
     }
 
-    print(f"\n🛑 Identified {len(template_phrases)} repeated template phrases (removed).")
+    print(f"\n🛑 Identified {len(template_headers_footers)} repeated headers/footers (REMOVED).")
 
-    # Keep only non-template portions of the text
+    # === STEP 3: IDENTIFY COMMON TEMPLATE PHRASES (EXCLUDING HEADERS/FOOTERS) ===
+    phrase_threshold = int(0.6 * total_pdfs)
+    template_phrases = {
+        phrase for phrase, count in phrase_count.items() if count >= phrase_threshold
+    }
+
+    print(f"\n🛑 Identified {len(template_phrases)} repeated template phrases (REMOVED).")
+
+    # === STEP 4: KEEP ONLY NON-TEMPLATE TEXT (AFTER HEADER/FOOTER REMOVAL) ===
     filtered_text = []
     for pdf_file, pages in text_by_pdf.items():
         for page_text in pages:
             sentences = page_text.split(". ")
-            new_text = [sentence for sentence in sentences if sentence not in template_phrases]
-            filtered_text.append(". ".join(new_text))  # Reconstruct cleaned text
+            cleaned_sentences = [
+                sentence for sentence in sentences
+                if sentence not in template_phrases and sentence not in template_headers_footers
+            ]
+            if cleaned_sentences:
+                filtered_text.append(". ".join(cleaned_sentences))  # Reconstruct cleaned text
 
     # Debug: Show first 10 retained phrases
-    print(f"\n✅ Kept {len(filtered_text)} unique text items after smarter filtering. Showing first 10:")
+    print(f"\n✅ Kept {len(filtered_text)} unique text items after smart filtering. Showing first 10:")
     for snippet in filtered_text[:10]:
         print(f"   - {snippet[:100]}...")  # Print first 100 chars
 
