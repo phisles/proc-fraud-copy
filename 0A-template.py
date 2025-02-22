@@ -1,6 +1,7 @@
 import os
 import json
 import string
+import re
 from collections import defaultdict
 from fuzzywuzzy import fuzz
 from pdfminer.high_level import extract_pages
