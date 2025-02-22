@@ -44,7 +44,7 @@ def clean_text(text):
     return text
 
 def find_common_text(pdf_files):
-    """Identify frequently occurring text across PDFs with debug prints."""
+    """Identify frequently occurring text across PDFs and automatically remove boilerplate."""
     text_count = defaultdict(int)
     total_pdfs = len(pdf_files)
 
@@ -54,27 +54,32 @@ def find_common_text(pdf_files):
         pdf_path = os.path.join(PDF_DIRECTORY, pdf_file)
         text_set = set(extract_text_from_pdf(pdf_path))  # Avoid duplicates per PDF
         for text in text_set:
-            text_count[text] += 1
+            text_count[text] += 1  # Track occurrences across PDFs
 
-    # Determine threshold (text must appear in at least 80% of PDFs)
-    threshold = max(2, int(0.6 * total_pdfs))
-    print(f"🔍 Inclusion threshold: {threshold} PDFs (out of {total_pdfs})\n")
+    # Determine automatic boilerplate removal threshold
+    boilerplate_threshold = int(0.9 * total_pdfs)  # If text appears in 90%+ of PDFs, it's boilerplate
+    min_threshold = max(2, int(0.6 * total_pdfs))  # Keep text appearing in at least 60% of PDFs
 
-    # Show text frequencies before filtering
-    print(f"   📌 Top 10 most common extracted text pieces before filtering:")
+    # Exclude overly common text (boilerplate)
+    filtered_text = [
+        text for text, count in text_count.items()
+        if min_threshold <= count < boilerplate_threshold
+    ]
+
+    # Debug: Show what got filtered
+    print("\n🔍 Boilerplate text removed (10 most common phrases filtered out):")
     sorted_text = sorted(text_count.items(), key=lambda x: x[1], reverse=True)[:10]
     for text, count in sorted_text:
-        print(f"      - [{count} PDFs] {text[:100]}...")  # Show first 100 characters
+        if count >= boilerplate_threshold:
+            print(f"   - [{count} PDFs] {text[:100]}...")  # Show first 100 chars of removed boilerplate
 
-    # Filter text that meets the threshold
-    common_text = [text for text, count in text_count.items() if count >= threshold]
+    # Debug: Show first 10 retained phrases
+    print(f"\n✅ Kept {len(filtered_text)} important text items. Showing first 10:")
+    for snippet in filtered_text[:10]:
+        print(f"   - {snippet[:100]}...")  # Print first 100 chars
 
-    # Debug: Show first 10 common lines found
-    print(f"✅ Found {len(common_text)} common text items. Showing first 10:")
-    for snippet in common_text[:10]:
-        print(f"   - {snippet[:100]}...")  # Print first 100 characters
+    return filtered_text
 
-    return common_text
 
 def main():
     """Run the template text extraction process."""
