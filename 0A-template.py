@@ -2,7 +2,7 @@ import os
 import json
 import string
 from collections import defaultdict
-from rapidfuzz import fuzz
+from fuzzywuzzy import fuzz
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LTTextContainer
 
@@ -11,7 +11,7 @@ PDF_DIRECTORY = "./test"
 OUTPUT_DIRECTORY = "./processed_data"
 OUTPUT_TEMPLATE_FILE = os.path.join(OUTPUT_DIRECTORY, "template_text.json")
 
-# === TEXT NORMALIZATION ===
+# === CLEAN TEXT FUNCTION ===
 def clean_page_text(text):
     """Normalize page text for better comparison."""
     text = text.lower().strip()
@@ -40,13 +40,12 @@ def extract_text_from_pdf(pdf_path):
     print(f"   ✅ Extracted {len(sentences_by_page)} pages.")
     return sentences_by_page  # Return cleaned text per page
 
-# === FIND COMMON TEMPLATE TEXT ===
+# === FIND COMMON TEMPLATE TEXT (SMARTER REMOVAL) ===
 def find_common_text(pdf_files):
-    """Identify frequently occurring text across PDFs and remove template pages."""
-    page_occurrences = defaultdict(list)  # Track which PDFs contain similar pages
-    text_count = defaultdict(int)  # Track text occurrences
-    total_pdfs = len(pdf_files)
+    """Identify frequently occurring text across PDFs and remove template portions, keeping unique text."""
+    phrase_count = defaultdict(int)
     text_by_pdf = {}
+    total_pdfs = len(pdf_files)
 
     print("\n📊 Counting text occurrences across PDFs...")
 
@@ -58,65 +57,37 @@ def find_common_text(pdf_files):
         text_by_pdf[pdf_file] = pages
 
         for page_text in pages:
-            for existing_text in page_occurrences:
-                similarity = fuzz.ratio(page_text, existing_text)  # Compare similarity
-                if similarity > 85:  # If 85% similar, count as the same page
-                    page_occurrences[existing_text].append(pdf_file)
-                    break
-            else:
-                page_occurrences[page_text].append(pdf_file)  # New unique page
+            words = page_text.split()  # Split page into words
+            for i in range(len(words) - 5):  # Look for common 5-word sequences
+                phrase = " ".join(words[i : i + 5])
+                phrase_count[phrase] += 1  # Count occurrences
 
-            # Track text occurrences within the page
-            for line in page_text.split("\n"):
-                text_count[line] += 1
+    # Identify template phrases (phrases appearing in 60%+ of PDFs)
+    template_phrases = {
+        phrase for phrase, count in phrase_count.items() if count >= int(0.6 * total_pdfs)
+    }
 
-    # Identify template pages (appearing in 60%+ of PDFs)
-    template_pages = {text for text, files in page_occurrences.items() if len(files) >= int(0.6 * total_pdfs)}
-    print(f"\n🛑 Identified {len(template_pages)} repeated template pages (removed).")
+    print(f"\n🛑 Identified {len(template_phrases)} repeated template phrases (removed).")
 
-    # Keep only text from unique pages
+    # Keep only non-template portions of the text
     filtered_text = []
     for pdf_file, pages in text_by_pdf.items():
         for page_text in pages:
-            if page_text not in template_pages:  # Remove template pages
-                filtered_text.extend(page_text.split("\n"))  # Keep only unique text
+            words = page_text.split()
+            new_text = []
+            i = 0
+            while i < len(words) - 5:
+                phrase = " ".join(words[i : i + 5])
+                if phrase in template_phrases:
+                    i += 5  # Skip template phrase
+                else:
+                    new_text.append(words[i])
+                    i += 1
 
-    # Apply secondary filtering on remaining text
-    filtered_text = filter_boilerplate_text(filtered_text, text_count, total_pdfs)
-
-    return filtered_text
-
-# === FILTER BOILERPLATE TEXT ===
-def filter_boilerplate_text(filtered_text, text_count, total_pdfs):
-    """Removes common boilerplate text after filtering template pages."""
-    common_template_words = {
-        "yes", "no", "n/a", "true", "false", "description", "duns", "cage", "ueid",
-        "firm name", "proposal number", "topic number", "participate", "disclaimer"
-    }
-
-    def is_probable_boilerplate(text):
-        """Detects if text is likely boilerplate using multiple conditions."""
-        if len(text) <= 3:  # Remove very short words/numbers (e.g., "6", "•")
-            return True
-        if text.lower() in common_template_words:  # Generic template metadata fields
-            return True
-        if sum(c in string.punctuation for c in text) > 5:  # Too many symbols
-            return True
-        if text.count("[") >= 2 or text.count("]") >= 2:  # Checkbox-style template items
-            return True
-        if text[0].isdigit() and "." in text[:5]:  # Lines that start with "15. ..."
-            return True
-        return False
-
-    # Remove highly common text (appears in 60%+ of PDFs)
-    boilerplate_threshold = int(0.6 * total_pdfs)
-    filtered_text = [
-        text for text in filtered_text
-        if text_count[text] < boilerplate_threshold and not is_probable_boilerplate(text)
-    ]
+            filtered_text.append(" ".join(new_text))  # Reconstruct cleaned text
 
     # Debug: Show first 10 retained phrases
-    print(f"\n✅ Kept {len(filtered_text)} unique text items after full filtering. Showing first 10:")
+    print(f"\n✅ Kept {len(filtered_text)} unique text items after phrase-level filtering. Showing first 10:")
     for snippet in filtered_text[:10]:
         print(f"   - {snippet[:100]}...")  # Print first 100 chars
 
