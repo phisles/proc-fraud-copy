@@ -2,7 +2,7 @@ import os
 import json
 import string
 from collections import defaultdict
-from fuzzywuzzy import fuzz  # Install using: pip install fuzzywuzzy
+from rapidfuzz import fuzz
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LTTextContainer
 
