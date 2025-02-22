@@ -42,7 +42,7 @@ def extract_text_from_pdf(pdf_path):
 
 # === FIND COMMON TEMPLATE TEXT (SMARTER FILTERING) ===
 def find_common_text(pdf_files):
-    """Identify frequently occurring text across PDFs and remove headers/footers first before filtering."""
+    """Identify frequently occurring text across PDFs, remove headers/footers separately, and preserve unique content."""
     phrase_count = defaultdict(int)
     header_footer_count = defaultdict(int)
     text_by_pdf = {}
@@ -67,7 +67,7 @@ def find_common_text(pdf_files):
                 header_footer_count[sentences[-1]] += 1  # Last sentence (footer)
 
             # Count all text for later phrase-based filtering
-            for sentence in sentences:
+            for sentence in sentences[1:-1]:  # Ignore first and last (header/footer)
                 phrase_count[sentence] += 1  
 
     # === STEP 2: IDENTIFY COMMON HEADERS/FOOTERS ===
@@ -91,10 +91,18 @@ def find_common_text(pdf_files):
     for pdf_file, pages in text_by_pdf.items():
         for page_text in pages:
             sentences = page_text.split(". ")
+
+            # Step 4.1: Remove headers/footers
+            if len(sentences) > 2:
+                core_sentences = sentences[1:-1]  # Keep only middle content
+            else:
+                core_sentences = sentences  # If only 1-2 sentences, keep all
+
+            # Step 4.2: Remove template phrases inside the middle content
             cleaned_sentences = [
-                sentence for sentence in sentences
-                if sentence not in template_phrases and sentence not in template_headers_footers
+                sentence for sentence in core_sentences if sentence not in template_phrases
             ]
+
             if cleaned_sentences:
                 filtered_text.append(". ".join(cleaned_sentences))  # Reconstruct cleaned text
 
@@ -104,7 +112,6 @@ def find_common_text(pdf_files):
         print(f"   - {snippet[:100]}...")  # Print first 100 chars
 
     return filtered_text
-
 # === MAIN FUNCTION ===
 def main():
     """Run the template text extraction process."""
