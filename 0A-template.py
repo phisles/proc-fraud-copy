@@ -1,24 +1,50 @@
-import re
 import os
+import re
 import json
 from collections import defaultdict
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LTTextContainer
 
+# Directory paths
+PDF_DIRECTORY = "./test"
+OUTPUT_DIRECTORY = "./processed_data"
+OUTPUT_TEMPLATE_FILE = os.path.join(OUTPUT_DIRECTORY, "template_text.json")
+
 def clean_page_text(text):
-    """Normalize page text while keeping sentence structure intact."""
+    """Normalize page text while preserving punctuation and sentence structure."""
     text = text.lower().strip()
     
-    # Preserve key punctuation while removing unwanted symbols
-    text = re.sub(r"[^\w\s.,!?;:]", "", text)  # Removes only special symbols but keeps periods, commas, etc.
+    # Preserve punctuation but remove unnecessary symbols
+    text = re.sub(r"[^\w\s.,!?;:]", "", text)  # Keep .,!?;: but remove other special chars
     
     # Ensure proper spacing after punctuation
-    text = re.sub(r"([.,!?;:])([^\s])", r"\1 \2", text)  # Adds space after punctuation if missing
+    text = re.sub(r"([.,!?;:])([^\s])", r"\1 \2", text)  # Add space after punctuation if missing
     
     # Reduce excess spaces
     text = re.sub(r"\s+", " ", text).strip()
     
     return text
+
+def extract_text_from_pdf(pdf_path):
+    """Extract text from a PDF file while preserving page structure."""
+    sentences_by_page = []
+    print(f"\n📄 Extracting text from: {pdf_path}")
+
+    for page_layout in extract_pages(pdf_path):
+        page_text = []
+        for element in page_layout:
+            if isinstance(element, LTTextContainer):
+                text = element.get_text().strip()
+                if text:
+                    page_text.append(text)
+
+        full_page_text = " ".join(page_text).strip()
+        if full_page_text:
+            full_page_text = clean_page_text(full_page_text)  # Clean text properly
+            sentences_by_page.append(full_page_text)
+
+    print(f"   ✅ Extracted {len(sentences_by_page)} pages.")
+    return sentences_by_page  # Return cleaned text per page
 
 def find_common_text(pdf_files):
     """Identify frequently occurring text across PDFs while preserving structure."""
@@ -50,7 +76,7 @@ def find_common_text(pdf_files):
                 header_footer_count[sentences[0]] += 1  # First sentence (header)
                 header_footer_count[sentences[-1]] += 1  # Last sentence (footer)
 
-            # Count phrase frequency (for later template detection)
+            # Count phrase frequency (for template detection)
             words = page_text.split()
             for i in range(len(words) - 6):  # Sliding window of 6 words
                 phrase = " ".join(words[i : i + 6])
@@ -100,3 +126,24 @@ def find_common_text(pdf_files):
         print(f"   - {snippet[:100]}...")  # Print first 100 chars
 
     return filtered_text
+
+def main():
+    """Run the template text extraction process."""
+    os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)  # Ensure directory exists
+
+    pdf_files = [f for f in os.listdir(PDF_DIRECTORY) if f.endswith(".pdf")]
+    
+    if len(pdf_files) < 2:
+        print("⚠️ Not enough PDFs to detect template text. At least 2 required.")
+        return
+
+    common_template_text = find_common_text(pdf_files)
+
+    # Save the template text to a file
+    with open(OUTPUT_TEMPLATE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"template_text": common_template_text}, f, indent=4)
+    
+    print(f"✅ Template text extracted and saved to {OUTPUT_TEMPLATE_FILE}")
+
+if __name__ == "__main__":
+    main()
