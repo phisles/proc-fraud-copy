@@ -59,7 +59,8 @@ def find_common_text(pdf_files):
         text_by_pdf[pdf_file] = pages
 
         for page_text in pages:
-            sentences = page_text.split(". ")  # Break into sentences
+            # Split by both `. ` (dot + space) and `\n` (newlines) to catch headers/footers
+            sentences = [s.strip() for s in re.split(r"\.\s+|\n", page_text) if s.strip()]
 
             # Detect headers & footers (first and last sentences)
             if len(sentences) > 2:
@@ -68,10 +69,13 @@ def find_common_text(pdf_files):
 
             # Count all text for later phrase-based filtering
             for sentence in sentences[1:-1]:  # Ignore first and last (header/footer)
-                phrase_count[sentence] += 1  
+                words = sentence.split()
+                for i in range(len(words) - 5):  # Look for 5-word phrases
+                    phrase = " ".join(words[i : i + 5])
+                    phrase_count[phrase] += 1  
 
     # === STEP 2: IDENTIFY COMMON HEADERS/FOOTERS ===
-    header_footer_threshold = int(0.6 * total_pdfs)
+    header_footer_threshold = int(0.5 * total_pdfs)  # Lowered to 50%
     template_headers_footers = {
         phrase for phrase, count in header_footer_count.items() if count >= header_footer_threshold
     }
@@ -79,18 +83,18 @@ def find_common_text(pdf_files):
     print(f"\n🛑 Identified {len(template_headers_footers)} repeated headers/footers (REMOVED).")
 
     # === STEP 3: IDENTIFY COMMON TEMPLATE PHRASES (EXCLUDING HEADERS/FOOTERS) ===
-    phrase_threshold = int(0.6 * total_pdfs)
+    phrase_threshold = int(0.5 * total_pdfs)  # Lowered to 50%
     template_phrases = {
         phrase for phrase, count in phrase_count.items() if count >= phrase_threshold
     }
 
-    print(f"\n🛑 Identified {len(template_phrases)} repeated template phrases (REMOVED).")
+    print(f"\n🛑 Identified {len(template_phrases)} repeated short phrases (REMOVED).")
 
     # === STEP 4: KEEP ONLY NON-TEMPLATE TEXT (AFTER HEADER/FOOTER REMOVAL) ===
     filtered_text = []
     for pdf_file, pages in text_by_pdf.items():
         for page_text in pages:
-            sentences = page_text.split(". ")
+            sentences = [s.strip() for s in re.split(r"\.\s+|\n", page_text) if s.strip()]
 
             # Step 4.1: Remove headers/footers
             if len(sentences) > 2:
@@ -99,9 +103,19 @@ def find_common_text(pdf_files):
                 core_sentences = sentences  # If only 1-2 sentences, keep all
 
             # Step 4.2: Remove template phrases inside the middle content
-            cleaned_sentences = [
-                sentence for sentence in core_sentences if sentence not in template_phrases
-            ]
+            cleaned_sentences = []
+            for sentence in core_sentences:
+                words = sentence.split()
+                new_sentence = []
+                i = 0
+                while i < len(words) - 5:
+                    phrase = " ".join(words[i : i + 5])
+                    if phrase in template_phrases:
+                        i += 5  # Skip template phrase
+                    else:
+                        new_sentence.append(words[i])
+                        i += 1
+                cleaned_sentences.append(" ".join(new_sentence))
 
             if cleaned_sentences:
                 filtered_text.append(". ".join(cleaned_sentences))  # Reconstruct cleaned text
