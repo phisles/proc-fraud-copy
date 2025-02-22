@@ -40,7 +40,7 @@ def extract_text_from_pdf(pdf_path):
     print(f"   ✅ Extracted {len(sentences_by_page)} pages.")
     return sentences_by_page  # Return cleaned text per page
 
-# === FIND COMMON TEMPLATE TEXT (SMARTER REMOVAL) ===
+# === FIND COMMON TEMPLATE TEXT (SMARTER FILTERING) ===
 def find_common_text(pdf_files):
     """Identify frequently occurring text across PDFs and remove template portions, keeping unique text."""
     phrase_count = defaultdict(int)
@@ -57,12 +57,11 @@ def find_common_text(pdf_files):
         text_by_pdf[pdf_file] = pages
 
         for page_text in pages:
-            words = page_text.split()  # Split page into words
-            for i in range(len(words) - 5):  # Look for common 5-word sequences
-                phrase = " ".join(words[i : i + 5])
-                phrase_count[phrase] += 1  # Count occurrences
+            sentences = page_text.split(". ")  # Break into sentences
+            for sentence in sentences:
+                phrase_count[sentence] += 1  # Count occurrences
 
-    # Identify template phrases (phrases appearing in 60%+ of PDFs)
+    # Identify template phrases (appearing in 60%+ of PDFs)
     template_phrases = {
         phrase for phrase, count in phrase_count.items() if count >= int(0.6 * total_pdfs)
     }
@@ -73,21 +72,12 @@ def find_common_text(pdf_files):
     filtered_text = []
     for pdf_file, pages in text_by_pdf.items():
         for page_text in pages:
-            words = page_text.split()
-            new_text = []
-            i = 0
-            while i < len(words) - 5:
-                phrase = " ".join(words[i : i + 5])
-                if phrase in template_phrases:
-                    i += 5  # Skip template phrase
-                else:
-                    new_text.append(words[i])
-                    i += 1
-
-            filtered_text.append(" ".join(new_text))  # Reconstruct cleaned text
+            sentences = page_text.split(". ")
+            new_text = [sentence for sentence in sentences if sentence not in template_phrases]
+            filtered_text.append(". ".join(new_text))  # Reconstruct cleaned text
 
     # Debug: Show first 10 retained phrases
-    print(f"\n✅ Kept {len(filtered_text)} unique text items after phrase-level filtering. Showing first 10:")
+    print(f"\n✅ Kept {len(filtered_text)} unique text items after smarter filtering. Showing first 10:")
     for snippet in filtered_text[:10]:
         print(f"   - {snippet[:100]}...")  # Print first 100 chars
 
