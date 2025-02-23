@@ -61,11 +61,25 @@ def save_to_csv(results):
         writer.writerow(["PDF_1", "PDF_2", "Text_Similarity (%)", "Image_Similarity (%)", "Overall_Match (%)"])
         writer.writerows(results)
 
+def print_match_statistics(results):
+    """Print the top matches and the range of similarity scores."""
+    sorted_results = sorted(results, key=lambda x: x[4], reverse=True)  # Sort by Overall_Match (%)
+    
+    print("\nTop Matching PDFs:")
+    for i, (file1, file2, text_sim, img_sim, overall) in enumerate(sorted_results[:5], start=1):
+        print(f"{i}. {file1} <> {file2} - Overall Match: {overall}% (Text: {text_sim}%, Images: {img_sim}%)")
+    
+    if results:
+        highest_match = sorted_results[0][4]
+        lowest_match = sorted_results[-1][4]
+        print(f"\nSimilarity Score Range: Highest - {highest_match}%, Lowest - {lowest_match}%")
+
 def main():
     """Main function to load JSON, compare PDFs, and save results."""
     json_data = load_json_files()
     results = compare_pdfs(json_data)
     save_to_csv(results)
+    print_match_statistics(results)
     print(f"✅ Comparison complete. Results saved to {CSV_OUTPUT_FILE}")
 
 if __name__ == "__main__":
