@@ -2,10 +2,14 @@ import os
 import json
 import csv
 import re
+from datetime import datetime
 
 PROCESSED_DIRECTORY = "./processed_data"
-UPDATED_SUMMARY_REPORT_FILE = "summary_report_with_contacts.csv"
 CSV_DIRECTORY = "."  # Assuming CSVs are stored in the current directory
+
+# Generate timestamp for the output file
+timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+CSV_OUTPUT_FILE = f"./pdf_comparison_{timestamp}.csv"
 
 def find_latest_pdf_comparison():
     """Find the most recent pdf_comparison_YYYYMMDD_HHMM.csv file."""
@@ -75,13 +79,13 @@ def update_summary_with_contacts():
         print(f"Updated row: {new_row}")
         new_rows.append(new_row)
     
-    print(f"Writing updated summary report to {UPDATED_SUMMARY_REPORT_FILE}")
-    with open(UPDATED_SUMMARY_REPORT_FILE, "w", newline="", encoding="utf-8") as outfile:
+    print(f"Writing updated summary report to {CSV_OUTPUT_FILE}")
+    with open(CSV_OUTPUT_FILE, "w", newline="", encoding="utf-8") as outfile:
         writer = csv.writer(outfile)
         writer.writerow(new_header)
         writer.writerows(new_rows)
     
-    print(f"Updated summary report saved to {UPDATED_SUMMARY_REPORT_FILE}")
+    print(f"Updated summary report saved to {CSV_OUTPUT_FILE}")
 
 if __name__ == "__main__":
     update_summary_with_contacts()
