@@ -71,8 +71,9 @@ def extract_matching_images():
             img_data_2 = image_hashes_2[img_hash]
 
             matching_images.append([
-                pdf_1, img_data_1["page"], img_data_1["image_file"], img_data_1["position"], img_hash,
-                pdf_2, img_data_2["page"], img_data_2["image_file"], img_data_2["position"]
+                pdf_1, pdf_2,
+                img_data_1["page"], img_data_1["position"],
+                img_data_2["page"], img_data_2["position"]
             ])
 
     if not matching_images:
@@ -83,8 +84,7 @@ def extract_matching_images():
     print(f"Writing matching images to {CSV_OUTPUT_FILE}")
     with open(CSV_OUTPUT_FILE, "w", newline="", encoding="utf-8") as outfile:
         writer = csv.writer(outfile)
-        writer.writerow(["PDF_1", "Page_1", "Image_File_1", "Position_1", "Hash",
-                         "PDF_2", "Page_2", "Image_File_2", "Position_2"])
+        writer.writerow(["PDF1", "PDF2", "PDF1_PageNum", "PDF1_Position", "PDF2_PageNum", "PDF2_Position"])
         writer.writerows(matching_images)
 
     print(f"Matching images saved to {CSV_OUTPUT_FILE}")
