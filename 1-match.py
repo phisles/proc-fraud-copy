@@ -39,7 +39,7 @@ def load_json_files():
     random_files = random.sample(remaining_files, min(1, len(remaining_files)))
 
     # Combine required files and random files
-    files = valid_required_files + random_files
+    files = all_files if not TEST_MODE else (valid_required_files + random_files)
 
     if not files:
         print("⚠️ No JSON files found in the output directory.")
