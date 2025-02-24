@@ -30,7 +30,7 @@ def load_firm_info():
                 json_data = json.load(f)
                 firm_info = json_data.get("firm_info", {})
 
-                extracted_contact_info = ""
+                extracted_contact_info = "N/A"
                 if not firm_info or any(v == "N/A" for v in firm_info.values()):
                     # Attempt to extract firm info from raw text
                     raw_text = json_data.get("text", "")
@@ -39,8 +39,13 @@ def load_firm_info():
                     if match:
                         extracted_contact_info = match.group(1).strip()
 
+                # Use structured firm info if available, otherwise fallback to extracted text
                 firm_data[file] = {
-                    "company": firm_info.get("company", "") if firm_info else extracted_contact_info
+                    "company": firm_info.get("company", "N/A") if firm_info else extracted_contact_info,
+                    "address": firm_info.get("address", "N/A"),
+                    "website": firm_info.get("website", "N/A"),
+                    "name": firm_info.get("name", "N/A"),
+                    "phone": firm_info.get("phone", "N/A"),
                 }
                 print(f"Loaded firm info for {file}: {firm_data[file]}")
     
@@ -70,7 +75,13 @@ def update_summary_with_contacts():
     
     new_header = header + ["company1", "address1", "website1", "name1", "phone1",
                             "company2", "address2", "website2", "name2", "phone2"]
-    
+
+    def get_firm_info(firm):
+        """Return structured info if available; otherwise, use extracted text or N/A."""
+        if firm["company"] and firm["company"] != "N/A":
+            return [firm["company"], firm["address"], firm["website"], firm["name"], firm["phone"]]
+        return [firm["company"], "N/A", "N/A", "N/A", "N/A"]  # Use extracted text in 'company' field, rest as N/A
+
     new_rows = []
     for row in filtered_rows:
         file1 = row[0]  # First column is the primary file
@@ -78,11 +89,10 @@ def update_summary_with_contacts():
         
         print(f"Processing file: {file1} with match: {file2}")
         
-        firm1 = firm_data.get(file1, {"company": "", "address": "", "website": "", "name": "", "phone": ""})
-        firm2 = firm_data.get(file2, {"company": "", "address": "", "website": "", "name": "", "phone": ""})
+        firm1 = firm_data.get(file1, {"company": "N/A", "address": "N/A", "website": "N/A", "name": "N/A", "phone": "N/A"})
+        firm2 = firm_data.get(file2, {"company": "N/A", "address": "N/A", "website": "N/A", "name": "N/A", "phone": "N/A"})
         
-        new_row = row + [firm1["company"], firm1["address"], firm1["website"], firm1["name"], firm1["phone"],
-                          firm2["company"], firm2["address"], firm2["website"], firm2["name"], firm2["phone"]]
+        new_row = row + get_firm_info(firm1) + get_firm_info(firm2)
         print(f"Updated row: {new_row}")
         new_rows.append(new_row)
     
