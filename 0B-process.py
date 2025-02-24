@@ -29,16 +29,11 @@ def get_ngrams(text, n=5):
     return {" ".join(words[i:i+n]) for i in range(len(words)-n+1)}
 
 def clean_text(text):
-    """Normalize text by removing special characters and extra spaces."""
-    text = text.lower().strip()
+    """Normalize text by removing extra spaces but keeping punctuation and capitalization."""
+    text = text.strip()  # Remove leading/trailing spaces
     text = re.sub(r'\s+', ' ', text)  # Replace multiple spaces with a single space
-    text = re.sub(r'[^\w\s.,!?-]', '', text)  # Remove non-alphanumeric characters except punctuation
-    return text
+    return text  # Keep original case and punctuation
 
-
-import re
-
-import re
 
 def extract_firm_info(json_data):
     """Extracts firm and contact information from JSON instead of reprocessing the PDF."""
