@@ -4,12 +4,15 @@ import csv
 from difflib import SequenceMatcher
 from itertools import combinations
 import random
+from datetime import datetime
+
+# Generate timestamped filename
+timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+CSV_OUTPUT_FILE = f"./pdf_comparison_{timestamp}.csv"
 
 TEST_MODE = True  # Set to False to process all files
-
 # Paths
 OUTPUT_DIRECTORY = "./processed_data"
-CSV_OUTPUT_FILE = "./pdf_comparison.csv"
 
 def load_json_files():
     """Load extracted JSON files from the output directory with progress updates."""
