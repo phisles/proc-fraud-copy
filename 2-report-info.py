@@ -43,6 +43,7 @@ def sanitize_csv_text(text):
 def load_firm_info():
     """Load firm contact info from JSON files and use extracted text as a fallback when necessary."""
     firm_data = {}
+
     for file in os.listdir(PROCESSED_DIRECTORY):
         if file.endswith(".json") and file != "template_text.json":  # Ignore template_text.json
             with open(os.path.join(PROCESSED_DIRECTORY, file), "r", encoding="utf-8") as f:
@@ -59,15 +60,24 @@ def load_firm_info():
                 used_fallback = False  # Track if fallback was used
 
                 if missing_fields:  # If any field is missing, trigger fallback extraction
-                    raw_text = json_data.get("text", "")
+                    raw_text = ""
+
+                    # 🔹 Extract text from all pages and concatenate
+                    if "text_by_page" in json_data:
+                        raw_text = " ".join(json_data["text_by_page"].values())
+
+                    # 🔹 Attempt extraction using regex
                     match = re.search(r"Contact Information(.*?)Form Generated on", raw_text, re.DOTALL)
 
                     if match:
                         extracted_contact_info = match.group(1).strip()
                         extracted_contact_info = sanitize_csv_text(extracted_contact_info)
                         used_fallback = True
-                        print(f"[DEBUG] Extracted fallback text for {file}:")
-                        print(extracted_contact_info[:500])  # Show first 500 characters for debugging
+                        
+                        print(f"[DEBUG] Extracted text for {file} (before sanitization):")
+                        print(match.group(1)[:500])  # Show first 500 characters
+                        print(f"[DEBUG] Extracted text for {file} (sanitized): {extracted_contact_info}")
+
                     else:
                         print(f"[WARN] No firm info found in {file}, and no extractable text.")
 
@@ -92,7 +102,7 @@ def load_firm_info():
                     }
 
                 print(f"[INFO] Final firm info for {file}: {firm_data[file]}")
-    
+
     return firm_data
     
 def update_summary_with_contacts():
