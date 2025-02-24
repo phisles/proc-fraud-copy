@@ -33,7 +33,7 @@ def load_json_files():
 
     # Select 3 additional random files
     remaining_files = list(set(all_files) - set(valid_required_files))
-    random_files = random.sample(remaining_files, min(2, len(remaining_files)))
+    random_files = random.sample(remaining_files, min(1, len(remaining_files)))
 
     # Combine required files and random files
     files = valid_required_files + random_files
