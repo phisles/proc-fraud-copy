@@ -4,6 +4,8 @@ import csv
 from difflib import SequenceMatcher
 from itertools import combinations
 
+TEST_MODE = True  # Set to False to process all files
+
 # Paths
 OUTPUT_DIRECTORY = "./processed_data"
 CSV_OUTPUT_FILE = "./pdf_comparison.csv"
@@ -11,7 +13,6 @@ CSV_OUTPUT_FILE = "./pdf_comparison.csv"
 def load_json_files():
     """Load extracted JSON files from the output directory with progress updates."""
     json_data = {}
-    TEST_MODE = True  # Set to False to process all files
     files = sorted([f for f in os.listdir(OUTPUT_DIRECTORY) if f.endswith(".json")])[:10] if TEST_MODE else \
             [f for f in os.listdir(OUTPUT_DIRECTORY) if f.endswith(".json")]
     
