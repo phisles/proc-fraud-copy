@@ -36,7 +36,7 @@ def sanitize_csv_text(text):
     
     # Escape double quotes and wrap in quotes if it contains commas
     if ',' in sanitized_text or '"' in sanitized_text:
-        sanitized_text = f'"{sanitized_text.replace("\"", "\"\"")}"'
+        sanitized_text = '"' + sanitized_text.replace('"', '""') + '"'
     
     return sanitized_text
 
