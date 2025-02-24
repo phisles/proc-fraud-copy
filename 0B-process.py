@@ -146,6 +146,7 @@ def extract_text_from_pdf(pdf_path, template_text):
             
             print(f"DEBUG: Page {page_number} - Before Cleaning: {repr(text[:100])}...")
             print(f"DEBUG: Page {page_number} - After Cleaning: {repr(cleaned_text[:100])}...")
+            print(f".")
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_text) if s.strip()]
             filtered_sentences = []
 
