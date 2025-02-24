@@ -29,14 +29,21 @@ def load_firm_info():
             with open(os.path.join(PROCESSED_DIRECTORY, file), "r", encoding="utf-8") as f:
                 json_data = json.load(f)
                 firm_info = json_data.get("firm_info", {})
+
+                extracted_contact_info = ""
+                if not firm_info or any(v == "N/A" for v in firm_info.values()):
+                    # Attempt to extract firm info from raw text
+                    raw_text = json_data.get("text", "")
+                    match = re.search(r"Contact Information(.*?)Form Generated on", raw_text, re.DOTALL)
+
+                    if match:
+                        extracted_contact_info = match.group(1).strip()
+
                 firm_data[file] = {
-                    "company": firm_info.get("company", ""),
-                    "address": firm_info.get("address", ""),
-                    "website": firm_info.get("website", ""),
-                    "name": firm_info.get("name", ""),
-                    "phone": firm_info.get("phone", "")
+                    "company": firm_info.get("company", "") if firm_info else extracted_contact_info
                 }
                 print(f"Loaded firm info for {file}: {firm_data[file]}")
+    
     return firm_data
 
 def update_summary_with_contacts():
