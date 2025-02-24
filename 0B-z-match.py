@@ -13,7 +13,7 @@ CSV_OUTPUT_FILE = "./pdf_comparison.csv"
 def load_json_files():
     """Load extracted JSON files from the output directory with progress updates."""
     json_data = {}
-    files = sorted([f for f in os.listdir(OUTPUT_DIRECTORY) if f.endswith(".json")])[:10] if TEST_MODE else \
+    files = sorted([f for f in os.listdir(OUTPUT_DIRECTORY) if f.endswith(".json")])[:4] if TEST_MODE else \
             [f for f in os.listdir(OUTPUT_DIRECTORY) if f.endswith(".json")]
     
     if not files:
