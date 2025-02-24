@@ -41,7 +41,7 @@ def sanitize_csv_text(text):
     return sanitized_text
 
 def load_firm_info():
-    """Load firm contact info from JSON files."""
+    """Load firm contact info from JSON files and use extracted text as a fallback when necessary."""
     firm_data = {}
     for file in os.listdir(PROCESSED_DIRECTORY):
         if file.endswith(".json") and file != "template_text.json":  # Ignore template_text.json
@@ -49,26 +49,31 @@ def load_firm_info():
                 json_data = json.load(f)
                 firm_info = json_data.get("firm_info", {})
 
-                # If any of the firm fields are missing or "N/A", trigger the fallback method
-                missing_data = any(
-                    firm_info.get(field, "N/A") in ("", "N/A") for field in ["company", "address", "website", "name", "phone"]
-                )
+                # Identify missing fields
+                missing_fields = [
+                    field for field in ["company", "address", "website", "name", "phone"]
+                    if firm_info.get(field, "N/A") in ("", "N/A")
+                ]
 
                 extracted_contact_info = "N/A"
-                if missing_data:
+                used_fallback = False  # Track if fallback was used
+
+                if missing_fields:  # If any field is missing, trigger fallback extraction
                     raw_text = json_data.get("text", "")
                     match = re.search(r"Contact Information(.*?)Form Generated on", raw_text, re.DOTALL)
 
                     if match:
                         extracted_contact_info = match.group(1).strip()
                         extracted_contact_info = sanitize_csv_text(extracted_contact_info)
+                        used_fallback = True
                         print(f"[DEBUG] Extracted fallback text for {file}:")
                         print(extracted_contact_info[:500])  # Show first 500 characters for debugging
                     else:
                         print(f"[WARN] No firm info found in {file}, and no extractable text.")
 
-                # If any field was missing, replace all firm info with extracted text
-                if missing_data:
+                # Debug print: Show the decision-making process
+                if used_fallback:
+                    print(f"[DEBUG] Using extracted text for {file} because missing fields: {', '.join(missing_fields)}")
                     firm_data[file] = {
                         "company": extracted_contact_info,
                         "address": "N/A",
@@ -77,6 +82,7 @@ def load_firm_info():
                         "phone": "N/A",
                     }
                 else:
+                    print(f"[DEBUG] Using structured firm info for {file}. All fields present.")
                     firm_data[file] = {
                         "company": firm_info.get("company", "N/A"),
                         "address": firm_info.get("address", "N/A"),
@@ -88,7 +94,7 @@ def load_firm_info():
                 print(f"[INFO] Final firm info for {file}: {firm_data[file]}")
     
     return firm_data
-
+    
 def update_summary_with_contacts():
     """Add firm contact info to the summary report."""
     csv_file = find_latest_pdf_comparison()
