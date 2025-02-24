@@ -9,12 +9,20 @@ OUTPUT_DIRECTORY = "./processed_data"
 CSV_OUTPUT_FILE = "./pdf_comparison.csv"
 
 def load_json_files():
-    """Load extracted JSON files from the output directory."""
+    """Load extracted JSON files from the output directory with progress updates."""
     json_data = {}
-    for file in os.listdir(OUTPUT_DIRECTORY):
-        if file.endswith(".json"):
-            with open(os.path.join(OUTPUT_DIRECTORY, file), "r", encoding="utf-8") as f:
-                json_data[file] = json.load(f)
+    files = [f for f in os.listdir(OUTPUT_DIRECTORY) if f.endswith(".json")]
+    
+    if not files:
+        print("⚠️ No JSON files found in the output directory.")
+        return json_data
+
+    print(f"📂 Found {len(files)} JSON files. Loading data...")
+    for file in files:
+        with open(os.path.join(OUTPUT_DIRECTORY, file), "r", encoding="utf-8") as f:
+            json_data[file] = json.load(f)
+
+    print(f"✅ Loaded {len(json_data)} JSON files successfully.")
     return json_data
 
 def compute_text_similarity(text1, text2):
@@ -34,32 +42,40 @@ def compute_image_similarity(images1, images2):
     return (len(common_hashes) / total_hashes) * 100 if total_hashes > 0 else 0.0
 
 def compare_pdfs(json_data):
-    """Compare each pair of PDFs and store similarity scores."""
+    """Compare each pair of PDFs and store similarity scores with live updates."""
     results = []
-    for (file1, data1), (file2, data2) in combinations(json_data.items(), 2):
-        
+    total_pairs = sum(1 for _ in combinations(json_data.items(), 2))
+    print(f"🔄 Starting PDF comparisons... {total_pairs} total pairs to compare.")
+
+    for idx, ((file1, data1), (file2, data2)) in enumerate(combinations(json_data.items(), 2), start=1):
         # Extract text from pages
         text1 = " ".join(data1.get("text_by_page", {}).values())
         text2 = " ".join(data2.get("text_by_page", {}).values())
         text_similarity = compute_text_similarity(text1, text2)
-        
+
         # Extract image data
         image_similarity = compute_image_similarity(data1.get("images", []), data2.get("images", []))
-        
+
         # Compute overall match score (weighted average, tweak as needed)
         overall_match = (0.7 * text_similarity) + (0.3 * image_similarity)
-        
+
         # Store result
         results.append([file1, file2, round(text_similarity, 2), round(image_similarity, 2), round(overall_match, 2)])
+
+        # Print progress every 10 comparisons
+        if idx % 10 == 0 or idx == total_pairs:
+            print(f"✅ Processed {idx}/{total_pairs} pairs... Last Match: {file1} <> {file2} - {round(overall_match, 2)}%")
     
     return results
 
 def save_to_csv(results):
-    """Save the comparison results to a CSV file."""
+    """Save the comparison results to a CSV file with a confirmation message."""
     with open(CSV_OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["PDF_1", "PDF_2", "Text_Similarity (%)", "Image_Similarity (%)", "Overall_Match (%)"])
         writer.writerows(results)
+    
+    print(f"📄 Results saved to {CSV_OUTPUT_FILE} with {len(results)} comparisons.")
 
 def print_match_statistics(results):
     """Print the top matches and the range of similarity scores."""
