@@ -49,11 +49,13 @@ def load_firm_info():
                 json_data = json.load(f)
                 firm_info = json_data.get("firm_info", {})
 
-                extracted_contact_info = "N/A"
-                should_fallback = not firm_info or all(v in ("", "N/A") for v in firm_info.values())
+                # If any of the firm fields are missing or "N/A", trigger the fallback method
+                missing_data = any(
+                    firm_info.get(field, "N/A") in ("", "N/A") for field in ["company", "address", "website", "name", "phone"]
+                )
 
-                if should_fallback:
-                    # Attempt to extract firm info from raw text
+                extracted_contact_info = "N/A"
+                if missing_data:
                     raw_text = json_data.get("text", "")
                     match = re.search(r"Contact Information(.*?)Form Generated on", raw_text, re.DOTALL)
 
@@ -65,16 +67,25 @@ def load_firm_info():
                     else:
                         print(f"[WARN] No firm info found in {file}, and no extractable text.")
 
-                # Prioritize structured firm data, but fall back to extracted contact info if needed
-                firm_data[file] = {
-                    "company": firm_info.get("company", "N/A") if firm_info and firm_info.get("company") not in ("", "N/A") else extracted_contact_info,
-                    "address": firm_info.get("address", "N/A"),
-                    "website": firm_info.get("website", "N/A"),
-                    "name": firm_info.get("name", "N/A"),
-                    "phone": firm_info.get("phone", "N/A"),
-                }
+                # If any field was missing, replace all firm info with extracted text
+                if missing_data:
+                    firm_data[file] = {
+                        "company": extracted_contact_info,
+                        "address": "N/A",
+                        "website": "N/A",
+                        "name": "N/A",
+                        "phone": "N/A",
+                    }
+                else:
+                    firm_data[file] = {
+                        "company": firm_info.get("company", "N/A"),
+                        "address": firm_info.get("address", "N/A"),
+                        "website": firm_info.get("website", "N/A"),
+                        "name": firm_info.get("name", "N/A"),
+                        "phone": firm_info.get("phone", "N/A"),
+                    }
 
-                print(f"[INFO] Loaded firm info for {file}: {firm_data[file]}")
+                print(f"[INFO] Final firm info for {file}: {firm_data[file]}")
     
     return firm_data
 
