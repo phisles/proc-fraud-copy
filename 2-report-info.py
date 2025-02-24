@@ -1,10 +1,21 @@
 import os
 import json
 import csv
+import re
 
 PROCESSED_DIRECTORY = "./processed_data"
-SUMMARY_REPORT_FILE = "summary_report.csv"
 UPDATED_SUMMARY_REPORT_FILE = "summary_report_with_contacts.csv"
+CSV_DIRECTORY = "."  # Assuming CSVs are stored in the current directory
+
+def find_latest_pdf_comparison():
+    """Find the most recent pdf_comparison_YYYYMMDD_HHMM.csv file."""
+    csv_files = [f for f in os.listdir(CSV_DIRECTORY) if re.match(r'pdf_comparison_\d{8}_\d{4}\.csv$', f)]
+    if not csv_files:
+        raise FileNotFoundError("No pdf_comparison_YYYYMMDD_HHMM.csv files found.")
+    
+    latest_file = max(csv_files, key=lambda x: x.split("_")[-1].split(".")[0])  # Sort by timestamp
+    print(f"Using latest PDF comparison file: {latest_file}")
+    return os.path.join(CSV_DIRECTORY, latest_file)
 
 def load_firm_info():
     """Load firm contact info from JSON files."""
@@ -26,27 +37,38 @@ def load_firm_info():
 
 def update_summary_with_contacts():
     """Add firm contact info to the summary report."""
-    print("Loading firm contact info...")
-    firm_data = load_firm_info()
+    csv_file = find_latest_pdf_comparison()
+    print(f"Reading PDF comparison data from {csv_file}")
     
-    print(f"Reading existing summary report from {SUMMARY_REPORT_FILE}")
-    with open(SUMMARY_REPORT_FILE, "r", newline="", encoding="utf-8") as infile:
+    with open(csv_file, "r", newline="", encoding="utf-8") as infile:
         reader = csv.reader(infile)
         header = next(reader)
         rows = list(reader)
+
+    overall_match_index = header.index("Overall_Match (%)")
     
-    new_header = header + ["company1", "address1", "website1", "name1", "phone1", 
+    # Filter rows based on the Overall_Match threshold
+    filtered_rows = [row for row in rows if float(row[overall_match_index]) >= 50.01]
+    print(f"Filtered rows count: {len(filtered_rows)}")
+
+    if not filtered_rows:
+        print("No valid rows found after filtering. Exiting.")
+        return
+
+    firm_data = load_firm_info()
+    
+    new_header = header + ["company1", "address1", "website1", "name1", "phone1",
                             "company2", "address2", "website2", "name2", "phone2"]
     
     new_rows = []
-    for row in rows:
-        file = row[0]  # First column is the primary file
-        match = row[1] if row[1] else ""  # Second column contains the match file
+    for row in filtered_rows:
+        file1 = row[0]  # First column is the primary file
+        file2 = row[1]  # Second column contains the match file
         
-        print(f"Processing file: {file} with match: {match}")
+        print(f"Processing file: {file1} with match: {file2}")
         
-        firm1 = firm_data.get(file, {"company": "", "address": "", "website": "", "name": "", "phone": ""})
-        firm2 = firm_data.get(match, {"company": "", "address": "", "website": "", "name": "", "phone": ""})
+        firm1 = firm_data.get(file1, {"company": "", "address": "", "website": "", "name": "", "phone": ""})
+        firm2 = firm_data.get(file2, {"company": "", "address": "", "website": "", "name": "", "phone": ""})
         
         new_row = row + [firm1["company"], firm1["address"], firm1["website"], firm1["name"], firm1["phone"],
                           firm2["company"], firm2["address"], firm2["website"], firm2["name"], firm2["phone"]]
