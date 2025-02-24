@@ -143,8 +143,9 @@ def extract_text_from_pdf(pdf_path, template_text):
         
         if text:
             cleaned_text = clean_text(text)  # Ensure clean_text is not altering capitalization
-            print(f"DEBUG: Extracted Text (Before Cleaning): {repr(text)}")  # Debugging
-            print(f"DEBUG: Extracted Text (After Cleaning): {repr(cleaned_text)}")  # Debugging
+            
+            print(f"DEBUG: Page {page_number} - Before Cleaning: {repr(text[:100])}...")
+            print(f"DEBUG: Page {page_number} - After Cleaning: {repr(cleaned_text[:100])}...")
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_text) if s.strip()]
             filtered_sentences = []
 
