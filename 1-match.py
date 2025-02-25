@@ -10,7 +10,7 @@ from datetime import datetime
 timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 CSV_OUTPUT_FILE = f"./pdf_comparison_{timestamp}.csv"
 
-TEST_MODE = True  # Set to False to process all files
+TEST_MODE = False  # Set to False to process all files
 # Paths
 OUTPUT_DIRECTORY = "./processed_data"
 
