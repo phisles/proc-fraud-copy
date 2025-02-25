@@ -21,11 +21,11 @@ def load_json_files():
     # Files that must be included in the test
     required_files = {
         "docNCCDDB4346693bda14bb5a4e3fb581ce077db81588e96fc9b37e809588d55cf81a2a05fe2e5f9.json",
-        "docNCCDDB4346693af18c922cec1362fb8e2e78db877f669e72452134db5bdc3fd023049628b7156.json",
-        "docNAC01FB7453539a8f94c77b631f7df9f75cf42daf7bb59b46b8d3117b1a7309f022623fb1cb44.json",
+        "Proposal_F2D-15327.json",
+        "ddocNAC01FB7453539a8f94c77b631f7df9f75cf42daf7bb59b46b8d3117b1a7309f022623fb1cb44.json",
         "Proposal_F244-0002-0320.json",
         "docNAC01FB74535350c8f622374c8eb3bb9b562f002f8bb94aa28452943298b38eb8c57f1310c918.json",
-        "docNAC01FB7453535d8ccbb60d6d519f5f0cfc272d7e4072642043641fa964ebdf082bbb34b96f8c.json"
+        "docNAC01FB74535356434423e0710933c37c87ef29b807bfe7da71dd9f7253130b0903ad3bc99acf.json"
     }
 
     # Get all JSON files in the directory
