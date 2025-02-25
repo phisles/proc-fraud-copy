@@ -234,7 +234,7 @@ def extract_images_from_pdf(pdf_path, pdf_filename):
 
             # Limit duplicate images appearing too frequently
             image_counts[img_hash] += 1
-            if image_counts[img_hash] > 3:  # Skip if the same image appears more than 3 times
+            if image_counts[img_hash] > 7:  # Skip if the same image appears more than 3 times
                 print(f"⚠️ Skipping repeated image (Hash: {img_hash}) on Page {page_number+1}")
                 continue
 
