@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import streamlit as st
 import pandas as pd
-from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
+from streamlit_agraph import agraph, Node, Edge, Config
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
@@ -15,78 +15,67 @@ def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
-    # st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}") # Removed for less verbose sidebar during fetch
+    st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
     try:
-        response = requests.get(BASE_URL, params=params, timeout=10) # Added timeout
-    except requests.exceptions.RequestException as e: # Catch specific request exceptions
-        st.sidebar.error(f"Error fetching page {page_number}: {e}") # Use st.sidebar.error for visibility
-        return None # Return None to indicate a fetch failure for this page
+        response = requests.get(BASE_URL, params=params, timeout=10)
+    except requests.exceptions.RequestException as e:
+        st.sidebar.write(f"Error fetching page {page_number}: {e}")
+        return []
     if response.status_code != 200:
-        st.sidebar.error(f"Error: Unable to fetch data (Status Code: {response.status_code}) for page {page_number}")
-        return None
+        st.sidebar.write(f"Error: Unable to fetch data (Status Code: {response.status_code})")
+        return []
     data = response.json()
     if isinstance(data, list):
         return data
-    st.sidebar.error(f"Unexpected response format for page {page_number}, stopping pagination.")
-    return None
+    st.sidebar.write("Unexpected response format, stopping pagination.")
+    return []
 
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
     page = 1
-    # max_pages_to_fetch = 100 # Safety limit, adjust if you expect more awards
+    batch_size = 5
     progress_bar = st.sidebar.progress(0)
     status_text = st.sidebar.empty()
 
-    # We need to estimate total awards to make the progress bar meaningful.
-    # For SBIR API, there's no direct way to get total, so we'll update based on fetched.
-    # Let's assume we might fetch up to 1000 awards to give a baseline for the progress bar
-    # You might need to adjust this max_expected_awards value if you consistently fetch more/less
-    max_expected_awards = 2000 # A reasonable guess for a few hundred pages worth of data (20 * 100)
+    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        while True:
+            futures = {}
+            for i in range(batch_size):
+                current_start = start + i * rows
+                current_page = page + i
+                future = executor.submit(fetch_page, current_start, agency, year, rows, current_page)
+                futures[future] = (current_start, current_page)
+            
+            batch_awards = []
+            batch_empty = False
+            for future in as_completed(futures):
+                page_awards = future.result()
+                curr_start, curr_page = futures[future]
+                if not page_awards:
+                    batch_empty = True
+                else:
+                    status_text.write(f"Page {curr_page}: Fetched {len(page_awards)} rows")
+                    batch_awards.extend(page_awards)
+            
+            if not batch_awards and batch_empty:
+                break
+            
+            results.extend(batch_awards)
+            progress_value = min(len(results) / 10000, 1.0)
+            progress_bar.progress(progress_value)
 
-    # Use a simpler pagination loop that continues as long as data is returned
-    while True:
-        status_text.write(f"Fetching awards... Page {page} (Offset: {start})")
-        
-        # Fetch a single page at a time (sequential for simplicity and stability)
-        # You can re-introduce ThreadPoolExecutor for concurrent pages later, but let's fix the core issue first
-        page_awards = fetch_page(start, agency, year, rows, page)
+            start += batch_size * rows
+            page += batch_size
 
-        if page_awards is None: # An error occurred or unexpected format
-            break
-        
-        if not page_awards: # No more awards on this page, so we've reached the end
-            st.sidebar.write(f"No more awards on page {page}. Stopping.")
-            break
-        
-        results.extend(page_awards)
-        
-        # Update progress bar
-        current_fetched = len(results)
-        progress_value = min(current_fetched / max_expected_awards, 1.0) # Cap at 100%
-        progress_bar.progress(progress_value)
-
-        start += rows
-        page += 1
-
-        # Optional: Add a break condition for an extremely large number of pages
-        # if page > max_pages_to_fetch:
-        #     st.sidebar.warning(f"Reached maximum page limit ({max_pages_to_fetch}). Stopping.")
-        #     break
-
-    status_text.empty() # Clear status text
-    progress_bar.empty() # Clear progress bar
+    status_text.empty()
+    progress_bar.empty()
     st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
     return results
-
-
-# The rest of your code remains the same as the previous full solution.
-# I'm including it below for completeness, but the key change is in fetch_awards.
 
 def similar_address(addr1, addr2, threshold=0.8):
     if not addr1 or not addr2:
         return False
-    # Remove common apartment/suite/unit indicators and standardize spacing
     addr1_clean = re.sub(r'(apt|suite|unit)\s*\.?\s*\d+', '', addr1, flags=re.IGNORECASE).strip()
     addr2_clean = re.sub(r'(apt|suite|unit)\s*\.?\s*\d+', '', addr2, flags=re.IGNORECASE).strip()
 
@@ -109,7 +98,6 @@ def find_duplicate_components(awards):
     n = len(awards)
     graph = {i: set() for i in range(n)}
 
-    # Helper to add edges if firms are different
     def add_edge_if_firms_differ(idx1, idx2):
         firm_i = normalize_firm_name(awards[idx1]["firm"])
         firm_j = normalize_firm_name(awards[idx2]["firm"])
@@ -117,7 +105,6 @@ def find_duplicate_components(awards):
             graph[idx1].add(idx2)
             graph[idx2].add(idx1)
 
-    # Group by URL.
     url_to_indices = defaultdict(list)
     for i, award in enumerate(awards):
         url = (award.get("company_url") or "").strip()
@@ -129,7 +116,6 @@ def find_duplicate_components(awards):
                 if i != j:
                     add_edge_if_firms_differ(i, j)
 
-    # Group by phone.
     phone_to_indices = defaultdict(list)
     for i, award in enumerate(awards):
         for field in ["poc_phone", "pi_phone"]:
@@ -142,7 +128,6 @@ def find_duplicate_components(awards):
                 if i != j:
                     add_edge_if_firms_differ(i, j)
 
-    # Pairwise check for similar addresses.
     for i in range(n):
         addr_i = (awards[i].get("address1") or "").strip()
         if not addr_i or addr_i.lower() == "none":
@@ -154,7 +139,6 @@ def find_duplicate_components(awards):
             if similar_address(addr_i, addr_j):
                 add_edge_if_firms_differ(i, j)
 
-    # Find connected components.
     seen = set()
     components = []
     for i in range(n):
@@ -182,82 +166,82 @@ def find_duplicate_components(awards):
     return final_components
 
 
-def display_graph(awards, components):
-    st.subheader("Interactive Duplicate Graph")
-
+# --- MODIFIED display_graph to take a single component ---
+def display_graph_for_component(awards, component_indices):
     nodes = []
     edges = []
     
-    # Keep track of created node IDs to avoid duplicates
-    node_ids = set()
+    node_ids = set() # To ensure unique IDs within this single component's graph
 
-    # Define colors for different node types
-    NODE_COLOR_FIRM = "#4285F4" # Blue
-    NODE_COLOR_URL = "#EA4335"  # Red
-    NODE_COLOR_ADDRESS = "#34A853" # Green
-    NODE_COLOR_PHONE = "#FBBC04" # Yellow
+    NODE_COLOR_FIRM = "#4285F4" 
+    NODE_COLOR_URL = "#EA4335"  
+    NODE_COLOR_ADDRESS = "#34A853"
+    NODE_COLOR_PHONE = "#FBBC04"
 
-    for comp_idx, comp in enumerate(components):
-        firm_nodes = {} # Store firm node IDs to link attributes
+    firm_nodes_map = {} # Map firm_name to a single node ID for that firm within this group
+
+    for award_idx in component_indices:
+        award = awards[award_idx]
+        firm_name = normalize_firm_name(award.get("firm", "Unknown Firm"))
         
-        for award_idx in comp:
-            award = awards[award_idx]
-            firm_name = normalize_firm_name(award.get("firm", "Unknown Firm"))
-            firm_id = f"firm_{firm_name}_{award_idx}" # Unique ID for each award's firm instance
-            
-            if firm_id not in node_ids:
-                nodes.append(Node(id=firm_id, label=firm_name, size=30, color=NODE_COLOR_FIRM, shape="dot", font={"size": 14}))
-                node_ids.add(firm_id)
-            
-            # Store the firm node ID for this specific award's firm
-            firm_nodes[award_idx] = firm_id
+        # Create a firm node. If multiple awards in this component are from the same firm,
+        # they should point to the same firm node to make the graph cleaner for that group.
+        # Use an ID that is unique to the firm within this group, not across all awards.
+        firm_node_id_for_group = f"firm_node_{firm_name}"
+        if firm_node_id_for_group not in node_ids:
+            nodes.append(Node(id=firm_node_id_for_group, label=firm_name, size=30, color=NODE_COLOR_FIRM, shape="dot", font={"size": 14}))
+            node_ids.add(firm_node_id_for_group)
+            firm_nodes_map[firm_name] = firm_node_id_for_group # Store unique firm node for this group
 
-            # Add URL node and edge
-            company_url = (award.get("company_url") or "").strip()
-            if company_url and company_url.lower() != "none":
-                url_id = f"url_{company_url}"
-                if url_id not in node_ids:
-                    nodes.append(Node(id=url_id, label=company_url, size=20, color=NODE_COLOR_URL, shape="box", font={"size": 12}))
-                    node_ids.add(url_id)
-                edges.append(Edge(source=firm_id, target=url_id, label="HAS_URL", type="arrow", color={"color": "#cccccc"}))
+        current_firm_node_id = firm_nodes_map[firm_name]
 
-            # Add Address node and edge
-            address = (award.get("address1") or "").strip()
-            if address and address.lower() != "none":
-                address_id = f"address_{address}"
-                if address_id not in node_ids:
-                    nodes.append(Node(id=address_id, label=address, size=25, color=NODE_COLOR_ADDRESS, shape="hexagon", font={"size": 12}))
-                    node_ids.add(address_id)
-                edges.append(Edge(source=firm_id, target=address_id, label="LOCATED_AT", type="arrow", color={"color": "#cccccc"}))
+        # Add URL node and edge
+        company_url = (award.get("company_url") or "").strip()
+        if company_url and company_url.lower() != "none":
+            url_id = f"url_node_{company_url}"
+            if url_id not in node_ids:
+                nodes.append(Node(id=url_id, label=company_url, size=20, color=NODE_COLOR_URL, shape="box", font={"size": 12}))
+                node_ids.add(url_id)
+            # Add edge from this firm instance to the URL node
+            edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color={"color": "#cccccc"}))
 
-            # Add Phone nodes and edges
-            for field in ["poc_phone", "pi_phone"]:
-                phone = (award.get(field) or "").strip()
-                if phone and phone.lower() != "none":
-                    phone_id = f"phone_{phone}"
-                    if phone_id not in node_ids:
-                        nodes.append(Node(id=phone_id, label=phone, size=20, color=NODE_COLOR_PHONE, shape="triangle", font={"size": 12}))
-                        node_ids.add(phone_id)
-                    edges.append(Edge(source=firm_id, target=phone_id, label="HAS_PHONE", type="arrow", color={"color": "#cccccc"}))
+        # Add Address node and edge
+        address = (award.get("address1") or "").strip()
+        if address and address.lower() != "none":
+            address_id = f"address_node_{address}"
+            if address_id not in node_ids:
+                nodes.append(Node(id=address_id, label=address, size=25, color=NODE_COLOR_ADDRESS, shape="hexagon", font={"size": 12}))
+                node_ids.add(address_id)
+            # Add edge from this firm instance to the Address node
+            edges.append(Edge(source=current_firm_node_id, target=address_id, label="LOCATED_AT", type="arrow", color={"color": "#cccccc"}))
+
+        # Add Phone nodes and edges
+        for field in ["poc_phone", "pi_phone"]:
+            phone = (award.get(field) or "").strip()
+            if phone and phone.lower() != "none":
+                phone_id = f"phone_node_{phone}"
+                if phone_id not in node_ids:
+                    nodes.append(Node(id=phone_id, label=phone, size=20, color=NODE_COLOR_PHONE, shape="triangle", font={"size": 12}))
+                    node_ids.add(phone_id)
+                # Add edge from this firm instance to the Phone node
+                edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color={"color": "#cccccc"}))
     
     if not nodes:
-        st.info("No nodes to display in the graph.")
+        st.info("No nodes to display in this graph group.")
         return
 
-    # Configuration for the graph
     config = Config(
-        width=1200, # Adjust width as needed for your layout
-        height=600, # Adjust height as needed
-        directed=True, # Show direction for clarity
+        width=800, # Smaller width for individual graphs
+        height=500, # Smaller height for individual graphs
+        directed=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
         collapsible=True,
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
-        physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -2000, "centralGravity": 0.3, "springLength": 95, "springConstant": 0.04, "damping": 0.09, "avoidOverlap": 0.5}},
+        physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -1000, "centralGravity": 0.1, "springLength": 80, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
     )
 
-    # Render the graph
     agraph(nodes=nodes, edges=edges, config=config)
 
 
@@ -281,51 +265,50 @@ def display_results(awards):
     duplicate_entities = sum(len(comp) for comp in components)
     total_awards = len(awards)
 
-    # Display summary at the top in a colored, large section.
     col1, col2, col3 = st.columns(3)
     col1.metric(label="Total Awards Analyzed", value=total_awards)
     col2.metric(label="Duplicate Entities", value=duplicate_entities)
-    col3.metric(label="Total Award Amount for Duplicates", value=f"${total_duplicates_amount:,.2f}") # Changed label for clarity
+    col3.metric(label="Total Award Amount for Duplicates", value=f"${total_duplicates_amount:,.2f}")
 
-    st.markdown("---") # Separator
+    st.markdown("---") 
+    st.header("Interactive Duplicate Graphs by Group") # New header for individual graphs
 
-    # --- Display the Knowledge Graph ---
-    display_graph(awards, components)
-    st.markdown("---") # Another separator
-
-    # Now display each duplicate group as tables.
-    st.subheader("Detailed Duplicate Groups")
-    for comp in components:
+    # Iterate through each component and display its graph and table
+    for comp_index, comp in enumerate(components):
         comp_rows = [awards[i] for i in comp]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
-        title = f"Duplicate Firms: {', '.join(distinct_firms)}"
-        st.markdown(f"#### {title}") # Use markdown for sub-subheader style
         
-        df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
-        
-        # Ensure all columns exist before selecting
-        required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = "N/A" # Add missing columns with default "N/A"
+        # Use st.expander to make each group collapsible, which improves UI
+        with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
+            st.markdown(f"#### Graph for Group {comp_index + 1}")
+            display_graph_for_component(awards, comp) # Pass only the current component
+            st.markdown("---")
+            
+            st.markdown(f"#### Details for Group {comp_index + 1}")
+            df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
+            
+            required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = "N/A"
 
-        df["Link"] = df["award_link"].apply(
-            lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
-        )
-        
-        display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
-        # Filter display_cols to only include those actually present in df after fetching
-        df_display = df[[col for col in display_cols if col in df.columns]]
+            df["Link"] = df["award_link"].apply(
+                lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
+            )
+            
+            display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
+            df_display = df[[col for col in display_cols if col in df.columns]]
 
-        st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
-        
-        group_total = 0.0
-        for award in comp_rows:
-            try:
-                group_total += float(award.get("award_amount", 0))
-            except ValueError:
-                group_total += 0
-        st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
+            st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
+            
+            group_total = 0.0
+            for award in comp_rows:
+                try:
+                    group_total += float(award.get("award_amount", 0))
+                except ValueError:
+                    group_total += 0
+            st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
+            
         st.markdown("---") # Add a horizontal rule between groups for readability
 
 def main():
@@ -344,7 +327,6 @@ def main():
         st.sidebar.write("---")
         st.sidebar.write("Starting data fetch...")
         
-        # Add a spinner while fetching data
         with st.spinner('Fetching awards data... This might take a while for large datasets.'):
             awards = fetch_awards(agency=agency, year=year, rows=100)
         
