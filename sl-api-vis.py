@@ -32,6 +32,7 @@ def fetch_page(start, agency, year, rows, page_number):
     if year:
         params["year"] = year
     # Using print instead of st.sidebar.write inside cached function
+    # Streamlit warnings/writes inside cached functions can cause re-runs or issues
     print(f"Requesting Page {page_number} | Start Offset: {start}")
     try:
         response = requests.get(BASE_URL, params=params)
@@ -383,19 +384,26 @@ def get_coordinates(address, city, state):
     if not address or not city or not state:
         return None
     full_address = f"{address}, {city}, {state}"
-    headers = {'User-Agent': 'SBIR_Duplicate_Finder/1.0 (your_email@example.com)'} # Replace with your actual email
+    # NOTE: It's good practice to provide a unique and descriptive User-Agent string.
+    # Replace 'your_email@example.com' with your actual contact email for API maintainers.
+    headers = {'User-Agent': 'SBIR_Duplicate_Finder/1.0 (contact@example.com)'}
     try:
-        response = requests.get(f"https://nominatim.openstreetmap.org/search?q={full_address}&format=json&limit=1", headers=headers)
+        response = requests.get(f"https://nominatim.openstreetmap.org/search?q={full_address}&format=json&limit=1", headers=headers, timeout=10) # Added timeout
         response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
         data = response.json()
         if data:
             lat = float(data[0]['lat'])
             lon = float(data[0]['lon'])
+            print(f"Geocoded '{full_address}': Lat={lat}, Lon={lon}") # Debug print
             return lat, lon
+        else:
+            print(f"No geocoding result for '{full_address}'") # Debug print
+    except requests.exceptions.Timeout:
+        print(f"Geocoding request timed out for '{full_address}'")
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching coordinates for {full_address}: {e}") # Use print in cached function
+        print(f"Error fetching coordinates for '{full_address}': {e}") # Use print in cached function
     except ValueError:
-        print(f"Could not parse coordinates for {full_address}") # Use print in cached function
+        print(f"Could not parse coordinates for '{full_address}' - data format error.") # Use print in cached function
     return None
 
 def display_results(awards):
@@ -441,26 +449,35 @@ def display_results(awards):
         st.subheader(f"Location Map for Group {comp_index + 1}")
         
         # Dictionary to group firms by their geocoded coordinates
+        # This will store { (lat, lon): [{"firm": "FirmName", "address": "Full Address"}, ...] }
         locations_grouped_by_coords = defaultdict(list)
+        
+        # List to track all successfully geocoded points for centering
+        successful_coords = []
 
+        # Debugging: Show which addresses are being processed
+        st.write("Attempting to geocode addresses for this group:")
         for award in comp_rows:
             address1 = (award.get("address1") or "").strip()
             city = (award.get("city") or "").strip()
             state = (award.get("state") or "").strip()
             firm_name = award.get("firm", "Unknown Firm")
-
-            coords = get_coordinates(address1, city, state)
-            if coords:
-                # Use a tuple of (lat, lon) as the key
-                locations_grouped_by_coords[coords].append({"firm": firm_name, "address": f"{address1}, {city}, {state}"})
-        
-        if locations_grouped_by_coords:
-            # Get all unique coordinates for centering the map
-            all_lats_lons = list(locations_grouped_by_coords.keys())
             
-            # Calculate a reasonable center for the map
-            avg_lat = sum(c[0] for c in all_lats_lons) / len(all_lats_lons)
-            avg_lon = sum(c[1] for c in all_lats_lons) / len(all_lats_lons)
+            full_address_str = f"{address1}, {city}, {state}".strip(", ")
+            st.write(f"- Processing: **{firm_name}** at '{full_address_str}'")
+
+            coords = get_coordinates(address1, city, state) # Call the cached function
+            if coords:
+                locations_grouped_by_coords[coords].append({"firm": firm_name, "address": full_address_str})
+                successful_coords.append(coords)
+                st.write(f"  - Geocoded to: Latitude {coords[0]:.4f}, Longitude {coords[1]:.4f}")
+            else:
+                st.warning(f"  - **Failed to geocode:** No coordinates found for '{full_address_str}'")
+        
+        if successful_coords:
+            # Calculate a reasonable center for the map based on all successfully geocoded points
+            avg_lat = sum(c[0] for c in successful_coords) / len(successful_coords)
+            avg_lon = sum(c[1] for c in successful_coords) / len(successful_coords)
             map_center = [avg_lat, avg_lon]
 
             m = folium.Map(location=map_center, zoom_start=8) # Increased zoom for better detail
@@ -476,8 +493,7 @@ def display_results(awards):
                     tooltip=f"{len(firms_at_location)} company(s) here"
                 ).add_to(m)
             
-            # Optionally add a LayerControl to toggle map layers (if you add more)
-            folium.LayerControl().add_to(m)
+            folium.LayerControl().add_to(m) # Allows user to switch map tiles
 
             st_folium(m, width=800, height=400)
         else:
