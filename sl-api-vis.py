@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
-# --- RESTORED EXACT fetch_page FUNCTION (from your last provided code) ---
+# --- ORIGINAL WORKING fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
@@ -31,7 +31,7 @@ def fetch_page(start, agency, year, rows, page_number):
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
-# --- RESTORED EXACT fetch_awards FUNCTION (from your last provided code) ---
+# --- ORIGINAL WORKING fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
@@ -61,7 +61,6 @@ def fetch_awards(agency="DOD", year=None, rows=100):
     st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
     return results
 
-# --- RESTORED EXACT similar_address FUNCTION (from your last provided code) ---
 def similar_address(addr1, addr2, threshold=0.8):
     if not addr1 or not addr2:
         return False
@@ -74,7 +73,6 @@ def similar_address(addr1, addr2, threshold=0.8):
         return False
     return SequenceMatcher(None, addr1_clean.lower(), addr2_clean.lower()).ratio() > threshold
 
-# --- RESTORED EXACT normalize_firm_name FUNCTION (from your last provided code) ---
 def normalize_firm_name(name):
     n = re.sub(r'\s+', ' ', name).strip()
     n = n.lower().replace(".", "").replace(",", "")
@@ -83,7 +81,7 @@ def normalize_firm_name(name):
             n = n[:-len(suffix)].strip()
     return n
 
-# --- RESTORED EXACT find_duplicate_components FUNCTION (from your last provided code) ---
+# --- find_duplicate_components (as it was in the last version where detection worked) ---
 def find_duplicate_components(awards):
     awards = [award for award in awards if award is not None]
     n = len(awards)
@@ -176,7 +174,7 @@ def find_duplicate_components(awards):
     
     return components_with_reasons
 
-# --- MODIFIED display_graph_for_component with ONLY aesthetic/layout changes ---
+# --- display_graph_for_component with styling and fit=True changes ---
 def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
@@ -208,8 +206,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
     SIMILAR_ADDRESS_EDGE_DASHES = [10, 5] # Dashed line
 
     # --- Node Sizes (Adjusted for prominence) ---
-    NODE_SIZE_FIRM_DEFAULT = 40 # Slightly larger base for firms (increased from 35)
-    NODE_SIZE_ATTR_DEFAULT = 20 # Increased from 15, to ensure better visibility for non-red-flag nodes
+    NODE_SIZE_FIRM = 35 # Slightly larger base for firms
+    NODE_SIZE_ATTR_DEFAULT = 15 # Significantly smaller for non-red-flag attributes
 
 
     firm_node_map = {} 
@@ -234,7 +232,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black"
 
             nodes.append(Node(id=firm_node_id_for_group, label=firm_name, 
-                              size=NODE_SIZE_FIRM_DEFAULT, 
+                              size=NODE_SIZE_FIRM, 
                               color=NODE_COLOR_FIRM, 
                               shape="dot", font={"size": 14},
                               borderWidth=firm_border_width, borderColor=firm_border_color))
@@ -344,41 +342,29 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
     config = Config(
         width=800, 
-        height=600, # Increased height to give more vertical space
+        height=500, 
         directed=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
         collapsible=True,
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
-        # --- Adjusted Physics and Disabled for predictability for small graphs ---
-        physics={"enabled": False}, # DISABLE PHYSICS FOR PREDICTABLE INITIAL LAYOUT
-        # If you want some physics for larger graphs, you'd need conditional logic here
-        # or very finely tuned parameters:
-        # physics={"enabled": True, "solver": "barnesHut", 
-        #          "barnesHut": {
-        #              "gravitationalConstant": -50, # Much less aggressive repulsion
-        #              "centralGravity": 0.05, 
-        #              "springLength": 100, 
-        #              "springConstant": 0.05, 
-        #              "damping": 0.09, 
-        #              "avoidOverlap": 0.5
-        #          }
-        # },
-        fit=True, # Ensure fit=True is here and should now work better without physics interfering
+        physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -1000, "centralGravity": 0.1, "springLength": 80, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
+        fit=True, # ADDED: Fit graph to view on load
     )
 
     agraph(nodes=nodes, edges=edges, config=config)
 
 
 def display_results(awards):
+    # This now gets all three pieces of information from find_duplicate_components
     components_data = find_duplicate_components(awards) 
     if not components_data:
         st.write("No matching groups found where rows with different firm names share a common value.")
         return
 
     total_duplicates_amount = 0.0
-    for comp_indices, _, _ in components_data: 
+    for comp_indices, _, _ in components_data: # Unpack to get just indices for sum
         comp_rows = [awards[i] for i in comp_indices]
         group_total = 0.0
         for award in comp_rows:
@@ -398,12 +384,13 @@ def display_results(awards):
     st.markdown("---") 
     st.header("Interactive Duplicate Graphs by Group")
 
-    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): 
+    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): # Unpack all three
         comp_rows = [awards[i] for i in comp_indices]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
         
         with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
             st.markdown(f"#### Graph for Group {comp_index + 1}")
+            # Pass all three pieces of data to display_graph_for_component
             display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings) 
             st.markdown("---")
             
