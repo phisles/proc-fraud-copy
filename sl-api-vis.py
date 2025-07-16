@@ -261,7 +261,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
             edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_url_attr else {"color": GREY_LIGHT} # Light grey for non-highlighted edges
             edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_url_attr else 1
-            edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color=edge_color, width=edge_width))
+            # Changed label to "url"
+            edges.append(Edge(source=current_firm_node_id, target=url_id, label="url", type="arrow", color=edge_color, width=edge_width))
 
 
         # Add Address node and edge
@@ -286,8 +287,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
             edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_address_attr else {"color": GREY_LIGHT} # Light grey for non-highlighted edges
             edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_address_attr else 1
-
-            edges.append(Edge(source=current_firm_node_id, target=address_id, label="LOCATED_AT", type="arrow", color=edge_color, width=edge_width))
+            # Changed label to "address"
+            edges.append(Edge(source=current_firm_node_id, target=address_id, label="address", type="arrow", color=edge_color, width=edge_width))
 
         # Add Phone nodes and edges
         for field in ["poc_phone", "pi_phone"]:
@@ -310,8 +311,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
                 edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_phone_attr else {"color": GREY_LIGHT}
                 edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_phone_attr else 1
-
-                edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color=edge_color, width=edge_width))
+                # Changed label to "phone"
+                edges.append(Edge(source=current_firm_node_id, target=phone_id, label="phone", type="arrow", color=edge_color, width=edge_width))
 
     # --- Add SIMILAR_TO edges between addresses that caused duplicate flags ---
     added_similar_address_edges = set()
@@ -329,7 +330,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
                 edge_pair = tuple(sorted((node_id1, node_id2)))
                 if edge_pair not in added_similar_address_edges and node_id1 != node_id2:
-                    edges.append(Edge(source=node_id1, target=node_id2, label="SIMILAR_TO", type="arrow",
+                    # Changed label to "similar"
+                    edges.append(Edge(source=node_id1, target=node_id2, label="similar", type="arrow",
                                       color={"color": SIMILAR_ADDRESS_EDGE_COLOR},
                                       width=SIMILAR_ADDRESS_EDGE_WIDTH,
                                       dashes=SIMILAR_ADDRESS_EDGE_DASHES))
@@ -348,7 +350,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
         highlightColor="#F7A7A6",
         collapsible=True,
         node={"labelProperty": "label", "font": {"size": 12}},
-        link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
+        # IMPORTANT: Updated link font color to blue
+        link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10, "color": "#0000FF"}},
         physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -1000, "centralGravity": 0.1, "springLength": 80, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
         fit=True, # ADDED: Fit graph to view on load
     )
