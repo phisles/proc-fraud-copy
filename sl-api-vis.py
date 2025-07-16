@@ -11,7 +11,7 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
-# --- ORIGINAL WORKING fetch_page FUNCTION ---
+# --- MODIFIED fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
@@ -27,7 +27,16 @@ def fetch_page(start, agency, year, rows, page_number):
         return []
     data = response.json()
     if isinstance(data, list):
-        return data
+        # Extract individual address components
+        processed_data = []
+        for award in data:
+            # Create new keys for address2, city, state, zip
+            award['address2'] = award.get('address2', '').strip()
+            award['city'] = award.get('city', '').strip()
+            award['state'] = award.get('state', '').strip()
+            award['zip'] = award.get('zip', '').strip()
+            processed_data.append(award)
+        return processed_data
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
@@ -265,13 +274,35 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             edges.append(Edge(source=current_firm_node_id, target=url_id, label="url", type="arrow", color=edge_color, width=edge_width))
 
 
-        # Add Address node and edge
-        address = (award.get("address1") or "").strip()
-        if address and address.lower() != "none":
-            address_id = f"address_node_{address}"
-            address_node_id_map[address] = address_id # Store for later linking
+        # Add Address node and edge (Now includes full address for display)
+        address1 = (award.get("address1") or "").strip()
+        address2 = (award.get("address2") or "").strip()
+        city = (award.get("city") or "").strip()
+        state = (award.get("state") or "").strip()
+        zip_code = (award.get("zip") or "").strip()
 
-            is_red_flag_address_attr = address in red_flag_attribute_strings['address']
+        # Concatenate address components for display
+        full_address = f"{address1}"
+        if address2:
+            full_address += f", {address2}"
+        if city or state or zip_code:
+            full_address += "\n" # New line for city, state, zip
+            if city:
+                full_address += f"{city}"
+            if state:
+                if city: full_address += ", "
+                full_address += f"{state}"
+            if zip_code:
+                if city or state: full_address += " "
+                full_address += f"{zip_code}"
+        
+        # Only create an address node if address1 exists
+        if address1 and address1.lower() != "none":
+            # Use address1 for the address_id map, but full_address for the node label
+            address_id = f"address_node_{address1}"
+            address_node_id_map[address1] = address_id # Store for later linking based on address1
+
+            is_red_flag_address_attr = address1 in red_flag_attribute_strings['address']
 
             address_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_address_attr else NODE_COLOR_ADDRESS
             address_node_size = NODE_SIZE_ATTR_DEFAULT * HIGHLIGHT_NODE_SIZE_FACTOR if is_red_flag_address_attr else NODE_SIZE_ATTR_DEFAULT
@@ -281,7 +312,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
 
             if address_id not in node_ids:
-                nodes.append(Node(id=address_id, label=address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 10}, # Smaller font
+                nodes.append(Node(id=address_id, label=full_address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 10}, # Smaller font
                                   borderWidth=address_node_border_width, borderColor=address_node_border_color))
                 node_ids.add(address_id)
 
@@ -406,7 +437,8 @@ def display_results(awards):
             st.markdown(f"#### Detailed Data for Group {comp_index + 1}")
             df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
 
-            required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
+            # Updated required_cols to include new address fields
+            required_cols = ["firm", "company_url", "address1", "address2", "city", "state", "zip", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
             for col in required_cols:
                 if col not in df.columns:
                     df[col] = "N/A"
@@ -415,7 +447,8 @@ def display_results(awards):
                 lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
             )
 
-            display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
+            # Updated display_cols to include new address fields
+            display_cols = ["firm", "company_url", "address1", "address2", "city", "state", "zip", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
             df_display = df[[col for col in display_cols if col in df.columns]]
 
             st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
