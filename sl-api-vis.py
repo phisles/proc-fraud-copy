@@ -15,63 +15,73 @@ def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
-    st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
+    # st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}") # Removed for less verbose sidebar during fetch
     try:
         response = requests.get(BASE_URL, params=params, timeout=10) # Added timeout
     except requests.exceptions.RequestException as e: # Catch specific request exceptions
-        st.sidebar.write(f"Error fetching page {page_number}: {e}")
-        return []
+        st.sidebar.error(f"Error fetching page {page_number}: {e}") # Use st.sidebar.error for visibility
+        return None # Return None to indicate a fetch failure for this page
     if response.status_code != 200:
-        st.sidebar.write(f"Error: Unable to fetch data (Status Code: {response.status_code})")
-        return []
+        st.sidebar.error(f"Error: Unable to fetch data (Status Code: {response.status_code}) for page {page_number}")
+        return None
     data = response.json()
     if isinstance(data, list):
         return data
-    st.sidebar.write("Unexpected response format, stopping pagination.")
-    return []
+    st.sidebar.error(f"Unexpected response format for page {page_number}, stopping pagination.")
+    return None
 
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
     page = 1
-    batch_size = 5  # Reduced batch_size to be more cautious with API requests
+    # max_pages_to_fetch = 100 # Safety limit, adjust if you expect more awards
     progress_bar = st.sidebar.progress(0)
     status_text = st.sidebar.empty()
 
-    with ThreadPoolExecutor(max_workers=batch_size) as executor:
-        while True:
-            futures = {}
-            for i in range(batch_size):
-                current_start = start + i * rows
-                current_page = page + i
-                future = executor.submit(fetch_page, current_start, agency, year, rows, current_page)
-                futures[future] = (current_start, current_page)
-            
-            batch_awards = []
-            batch_empty = False
-            for future in as_completed(futures):
-                page_awards = future.result()
-                curr_start, curr_page = futures[future]
-                if not page_awards:
-                    batch_empty = True
-                else:
-                    status_text.write(f"Page {curr_page}: Fetched {len(page_awards)} rows")
-                    batch_awards.extend(page_awards)
-            
-            if not batch_awards: # If an entire batch returns no new awards, we're done
-                break
-            
-            results.extend(batch_awards)
-            progress_value = min(len(results) / 10000, 1.0) # Assume max 10k awards for progress, adjust as needed
-            progress_bar.progress(progress_value)
+    # We need to estimate total awards to make the progress bar meaningful.
+    # For SBIR API, there's no direct way to get total, so we'll update based on fetched.
+    # Let's assume we might fetch up to 1000 awards to give a baseline for the progress bar
+    # You might need to adjust this max_expected_awards value if you consistently fetch more/less
+    max_expected_awards = 2000 # A reasonable guess for a few hundred pages worth of data (20 * 100)
 
-            start += batch_size * rows
-            page += batch_size
+    # Use a simpler pagination loop that continues as long as data is returned
+    while True:
+        status_text.write(f"Fetching awards... Page {page} (Offset: {start})")
+        
+        # Fetch a single page at a time (sequential for simplicity and stability)
+        # You can re-introduce ThreadPoolExecutor for concurrent pages later, but let's fix the core issue first
+        page_awards = fetch_page(start, agency, year, rows, page)
+
+        if page_awards is None: # An error occurred or unexpected format
+            break
+        
+        if not page_awards: # No more awards on this page, so we've reached the end
+            st.sidebar.write(f"No more awards on page {page}. Stopping.")
+            break
+        
+        results.extend(page_awards)
+        
+        # Update progress bar
+        current_fetched = len(results)
+        progress_value = min(current_fetched / max_expected_awards, 1.0) # Cap at 100%
+        progress_bar.progress(progress_value)
+
+        start += rows
+        page += 1
+
+        # Optional: Add a break condition for an extremely large number of pages
+        # if page > max_pages_to_fetch:
+        #     st.sidebar.warning(f"Reached maximum page limit ({max_pages_to_fetch}). Stopping.")
+        #     break
 
     status_text.empty() # Clear status text
     progress_bar.empty() # Clear progress bar
     st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
     return results
+
+
+# The rest of your code remains the same as the previous full solution.
+# I'm including it below for completeness, but the key change is in fetch_awards.
 
 def similar_address(addr1, addr2, threshold=0.8):
     if not addr1 or not addr2:
@@ -188,9 +198,6 @@ def display_graph(awards, components):
     NODE_COLOR_PHONE = "#FBBC04" # Yellow
 
     for comp_idx, comp in enumerate(components):
-        # Create a unique ID for the group/component if you want to link it
-        # For simplicity, we'll focus on direct connections for now.
-
         firm_nodes = {} # Store firm node IDs to link attributes
         
         for award_idx in comp:
@@ -233,22 +240,6 @@ def display_graph(awards, components):
                         node_ids.add(phone_id)
                     edges.append(Edge(source=firm_id, target=phone_id, label="HAS_PHONE", type="arrow", color={"color": "#cccccc"}))
     
-    # Add direct links between firms that share a common attribute (URL, Address, Phone)
-    # This is more complex as it means iterating through the original "graph" from find_duplicate_components
-    # To simplify, we've already linked awards to shared attributes, which effectively links the firms.
-    # If you wanted a *direct* "is_duplicate_of" edge, you'd iterate through the `graph` from `find_duplicate_components`
-    # and add edges between firm_ids based on those connections.
-
-    # Example: Adding direct duplicate edges based on the graph from find_duplicate_components
-    # (This can make the graph very dense, consider if truly needed or if shared nodes are sufficient)
-    # for i in range(len(awards)):
-    #     for j in graph[i]: # graph is from find_duplicate_components
-    #         if i < j: # Avoid duplicate edges (i->j and j->i)
-    #             firm_i_id = f"firm_{normalize_firm_name(awards[i].get('firm', ''))}_{i}"
-    #             firm_j_id = f"firm_{normalize_firm_name(awards[j].get('firm', ''))}_{j}"
-    #             edges.append(Edge(source=firm_i_id, target=firm_j_id, label="DUPLICATE_LINK", color={"color": "#FF0000"}))
-
-
     if not nodes:
         st.info("No nodes to display in the graph.")
         return
@@ -264,8 +255,6 @@ def display_graph(awards, components):
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
         physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -2000, "centralGravity": 0.3, "springLength": 95, "springConstant": 0.04, "damping": 0.09, "avoidOverlap": 0.5}},
-        # You can adjust physics parameters to control node spacing and movement
-        # Or set physics=False and use a predefined layout (but it's harder to implement a good one manually)
     )
 
     # Render the graph
@@ -350,7 +339,7 @@ def main():
     run_clicked = st.sidebar.button("Run Analysis")
     
     if not run_clicked:
-        st.info("Adjust the filters in the sidebar and click 'Run Analysis' to fetch data and find duplicates.")
+        st.info("Adjust the filters in the sidebar and click 'Run Analysis' to fetch data.")
     else:
         st.sidebar.write("---")
         st.sidebar.write("Starting data fetch...")
