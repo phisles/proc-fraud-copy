@@ -12,25 +12,55 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
 # --- MODIFIED fetch_page FUNCTION ---
+# --- MODIFIED fetch_page FUNCTION to print raw response on error ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
     st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
+
+    response = None # Initialize response to None
     try:
         response = requests.get(BASE_URL, params=params)
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+    except requests.exceptions.HTTPError as http_err:
+        error_message = f"HTTP error fetching page {page_number}: {http_err}"
+        if response is not None:
+            error_message += f"\nRaw response (HTTP Error): {response.text[:1000]}..." # Print up to 1000 chars
+        st.sidebar.error(error_message) # Use st.sidebar.error for red text
+        return []
+    except requests.exceptions.ConnectionError as conn_err:
+        st.sidebar.error(f"Connection error fetching page {page_number}: {conn_err}")
+        return []
+    except requests.exceptions.Timeout as timeout_err:
+        st.sidebar.error(f"Timeout error fetching page {page_number}: {timeout_err}")
+        return []
+    except requests.exceptions.RequestException as req_err:
+        st.sidebar.error(f"An unexpected request error occurred fetching page {page_number}: {req_err}")
+        return []
+    except Exception as e: # Catch any other unexpected errors during the request
+        st.sidebar.error(f"General error during request for page {page_number}: {e}")
+        return []
+
+    # Attempt to parse JSON
+    data = None
+    try:
+        data = response.json()
+    except requests.exceptions.JSONDecodeError as json_err:
+        st.sidebar.error(f"JSON decode error for page {page_number}: {json_err}")
+        if response is not None:
+            st.sidebar.error(f"Raw response (JSON Error): {response.text[:2000]}...") # Print more for JSON errors
+        return []
     except Exception as e:
-        st.sidebar.write(f"Error fetching page {page_number}: {e}")
+        st.sidebar.error(f"Unexpected error parsing JSON for page {page_number}: {e}")
+        if response is not None:
+            st.sidebar.error(f"Raw response (JSON Parsing Error): {response.text[:2000]}...")
         return []
-    if response.status_code != 200:
-        st.sidebar.write(f"Error: Unable to fetch data (Status Code: {response.status_code})")
-        return []
-    data = response.json()
+
     if isinstance(data, list):
-        # Extract individual address components
         processed_data = []
         for award in data:
-            # IMPORTANT: Add a check here to ensure 'award' is a dictionary
+            # THIS IS THE CRUCIAL CHECK: Ensure 'award' is a dictionary
             if isinstance(award, dict):
                 award['address2'] = award.get('address2', '').strip()
                 award['city'] = award.get('city', '').strip()
@@ -38,10 +68,18 @@ def fetch_page(start, agency, year, rows, page_number):
                 award['zip'] = award.get('zip', '').strip()
                 processed_data.append(award)
             else:
-                st.sidebar.warning(f"Skipping unexpected award format on page {page_number}: {award}")
+                # Log what the unexpected 'award' type/value is directly
+                st.sidebar.error(
+                    f"Skipping unexpected item in API response on page {page_number}. "
+                    f"Expected dict, got type: {type(award).__name__}, value: {str(award)[:500]}" # Truncate value
+                )
         return processed_data
-    st.sidebar.write("Unexpected response format, stopping pagination.")
-    return []
+    else:
+        st.sidebar.error(
+            f"Unexpected top-level response format for page {page_number}. "
+            f"Expected a list, got type: {type(data).__name__}, value: {str(data)[:1000]}..." # Truncate value
+        )
+        return []
 
 # The rest of your code remains the same:
 
