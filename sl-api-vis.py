@@ -439,7 +439,10 @@ def display_results(awards):
 
         # --- Mapping Tool Integration ---
         st.subheader(f"Location Map for Group {comp_index + 1}")
-        locations = []
+        
+        # Dictionary to group firms by their geocoded coordinates
+        locations_grouped_by_coords = defaultdict(list)
+
         for award in comp_rows:
             address1 = (award.get("address1") or "").strip()
             city = (award.get("city") or "").strip()
@@ -448,20 +451,34 @@ def display_results(awards):
 
             coords = get_coordinates(address1, city, state)
             if coords:
-                locations.append({"firm": firm_name, "lat": coords[0], "lon": coords[1], "address": f"{address1}, {city}, {state}"})
+                # Use a tuple of (lat, lon) as the key
+                locations_grouped_by_coords[coords].append({"firm": firm_name, "address": f"{address1}, {city}, {state}"})
         
-        if locations:
-            # Center map on the first location, or a default if no locations
-            map_center = [locations[0]['lat'], locations[0]['lon']] if locations else [39.8283, -98.5795] # US center
-            m = folium.Map(location=map_center, zoom_start=5)
+        if locations_grouped_by_coords:
+            # Get all unique coordinates for centering the map
+            all_lats_lons = list(locations_grouped_by_coords.keys())
+            
+            # Calculate a reasonable center for the map
+            avg_lat = sum(c[0] for c in all_lats_lons) / len(all_lats_lons)
+            avg_lon = sum(c[1] for c in all_lats_lons) / len(all_lats_lons)
+            map_center = [avg_lat, avg_lon]
 
-            for loc in locations:
+            m = folium.Map(location=map_center, zoom_start=8) # Increased zoom for better detail
+
+            for coords, firms_at_location in locations_grouped_by_coords.items():
+                popup_html = "<b>Companies at this location:</b><br>"
+                for item in firms_at_location:
+                    popup_html += f"- {item['firm']} ({item['address']})<br>"
+                
                 folium.Marker(
-                    location=[loc['lat'], loc['lon']],
-                    popup=f"<b>{loc['firm']}</b><br>{loc['address']}",
-                    tooltip=loc['firm']
+                    location=[coords[0], coords[1]],
+                    popup=folium.Popup(popup_html, max_width=300), # Use folium.Popup for rich HTML
+                    tooltip=f"{len(firms_at_location)} company(s) here"
                 ).add_to(m)
             
+            # Optionally add a LayerControl to toggle map layers (if you add more)
+            folium.LayerControl().add_to(m)
+
             st_folium(m, width=800, height=400)
         else:
             st.info("No valid addresses found to display on the map for this group.")
