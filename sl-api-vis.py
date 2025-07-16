@@ -1,4 +1,3 @@
-
 import requests
 from collections import defaultdict
 from difflib import SequenceMatcher
@@ -12,14 +11,13 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
-# --- RESTORED ORIGINAL fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
     st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
     try:
-        response = requests.get(BASE_URL, params=params) # Original: no timeout, basic error handling
+        response = requests.get(BASE_URL, params=params)
     except Exception as e:
         st.sidebar.write(f"Error fetching page {page_number}: {e}")
         return []
@@ -32,12 +30,11 @@ def fetch_page(start, agency, year, rows, page_number):
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
-# --- RESTORED ORIGINAL fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
     page = 1
-    batch_size = 10  # Original batch_size
+    batch_size = 10
     with ThreadPoolExecutor(max_workers=batch_size) as executor:
         while True:
             futures = {}
@@ -55,13 +52,12 @@ def fetch_awards(agency="DOD", year=None, rows=100):
                 else:
                     st.sidebar.write(f"Page {curr_page}: Fetched {len(page_awards)} rows")
                     results.extend(page_awards)
-            if batch_empty: # Original breaking condition
+            if batch_empty:
                 break
             start += batch_size * rows
             page += batch_size
     st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
     return results
-# --- END RESTORED ORIGINAL FETCH FUNCTIONS ---
 
 def similar_address(addr1, addr2, threshold=0.8):
     if not addr1 or not addr2:
@@ -162,25 +158,60 @@ def display_graph_for_component(awards, component_indices):
     
     node_ids = set() # To ensure unique IDs within this single component's graph
 
-    NODE_COLOR_FIRM = "#4285F4" 
-    NODE_COLOR_URL = "#EA4335"  
-    NODE_COLOR_ADDRESS = "#34A853"
-    NODE_COLOR_PHONE = "#FBBC04"
+    # Define colors for different node types
+    NODE_COLOR_FIRM = "#4285F4" # Blue
+    NODE_COLOR_URL = "#34A853"  # Green
+    NODE_COLOR_ADDRESS = "#FBBC04" # Yellow
+    NODE_COLOR_PHONE = "#EA4335" # Red
+
+    # Highlight colors for shared (red flag) attributes
+    HIGHLIGHT_COLOR_NODE = "#FF0000" # Bright Red for the shared node
+    HIGHLIGHT_COLOR_EDGE = "#FF0000" # Bright Red for the connecting edges
+    HIGHLIGHT_EDGE_WIDTH = 3
+    HIGHLIGHT_NODE_BORDER_COLOR = "#FFFFFF" # White border for highlight
+    HIGHLIGHT_NODE_BORDER_WIDTH = 3
+    HIGHLIGHT_NODE_SIZE_INCREASE = 1.5 # Make it 50% larger
 
     firm_nodes_map = {} # Map firm_name to a single node ID for that firm within this group
+
+    # --- Step 1: Identify shared "red flag" attributes within this component ---
+    shared_urls = defaultdict(set)
+    shared_addresses = defaultdict(set)
+    shared_phones = defaultdict(set)
 
     for award_idx in component_indices:
         award = awards[award_idx]
         firm_name = normalize_firm_name(award.get("firm", "Unknown Firm"))
         
-        # Create a firm node. If multiple awards in this component are from the same firm,
-        # they should point to the same firm node to make the graph cleaner for that group.
-        # Use an ID that is unique to the firm within this group, not across all awards.
+        company_url = (award.get("company_url") or "").strip()
+        if company_url and company_url.lower() != "none":
+            shared_urls[company_url].add(firm_name)
+
+        address = (award.get("address1") or "").strip()
+        if address and address.lower() != "none":
+            shared_addresses[address].add(firm_name)
+
+        for field in ["poc_phone", "pi_phone"]:
+            phone = (award.get(field) or "").strip()
+            if phone and phone.lower() != "none":
+                shared_phones[phone].add(firm_name)
+
+    # Filter to only include attributes shared by MORE THAN ONE firm
+    red_flag_urls = {url for url, firms in shared_urls.items() if len(firms) > 1}
+    red_flag_addresses = {addr for addr, firms in shared_addresses.items() if len(firms) > 1}
+    red_flag_phones = {phone for phone, firms in shared_phones.items() if len(firms) > 1}
+    # --- End Step 1 ---
+
+
+    for award_idx in component_indices:
+        award = awards[award_idx]
+        firm_name = normalize_firm_name(award.get("firm", "Unknown Firm"))
+        
         firm_node_id_for_group = f"firm_node_{firm_name}"
         if firm_node_id_for_group not in node_ids:
             nodes.append(Node(id=firm_node_id_for_group, label=firm_name, size=30, color=NODE_COLOR_FIRM, shape="dot", font={"size": 14}))
             node_ids.add(firm_node_id_for_group)
-            firm_nodes_map[firm_name] = firm_node_id_for_group # Store unique firm node for this group
+            firm_nodes_map[firm_name] = firm_node_id_for_group
 
         current_firm_node_id = firm_nodes_map[firm_name]
 
@@ -188,32 +219,64 @@ def display_graph_for_component(awards, component_indices):
         company_url = (award.get("company_url") or "").strip()
         if company_url and company_url.lower() != "none":
             url_id = f"url_node_{company_url}"
+            is_red_flag_url = url_id in {f"url_node_{u}" for u in red_flag_urls} # Check if this specific URL is a red flag
+
+            # Node styling
+            url_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_url else NODE_COLOR_URL
+            url_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_url else 20
+            url_node_border = {"color": HIGHLIGHT_NODE_BORDER_COLOR, "width": HIGHLIGHT_NODE_BORDER_WIDTH} if is_red_flag_url else None
+            url_node_shape = "star" if is_red_flag_url else "box" # Change shape for emphasis
+
             if url_id not in node_ids:
-                nodes.append(Node(id=url_id, label=company_url, size=20, color=NODE_COLOR_URL, shape="box", font={"size": 12}))
+                nodes.append(Node(id=url_id, label=company_url, size=url_node_size, color=url_node_color, shape=url_node_shape, font={"size": 12}, borderWidth=url_node_border.get("width", 1) if url_node_border else 1, borderColor=url_node_border.get("color", "black") if url_node_border else "black"))
                 node_ids.add(url_id)
-            # Add edge from this firm instance to the URL node
-            edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color={"color": "#cccccc"}))
+            
+            # Edge styling
+            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_url else {"color": "#cccccc"}
+            edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_url else 1
+
+            edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color=edge_color, width=edge_width))
 
         # Add Address node and edge
         address = (award.get("address1") or "").strip()
         if address and address.lower() != "none":
             address_id = f"address_node_{address}"
+            is_red_flag_address = address_id in {f"address_node_{a}" for a in red_flag_addresses}
+
+            address_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_address else NODE_COLOR_ADDRESS
+            address_node_size = 25 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_address else 25
+            address_node_border = {"color": HIGHLIGHT_NODE_BORDER_COLOR, "width": HIGHLIGHT_NODE_BORDER_WIDTH} if is_red_flag_address else None
+            address_node_shape = "star" if is_red_flag_address else "hexagon"
+
             if address_id not in node_ids:
-                nodes.append(Node(id=address_id, label=address, size=25, color=NODE_COLOR_ADDRESS, shape="hexagon", font={"size": 12}))
+                nodes.append(Node(id=address_id, label=address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 12}, borderWidth=address_node_border.get("width", 1) if address_node_border else 1, borderColor=address_node_border.get("color", "black") if address_node_border else "black"))
                 node_ids.add(address_id)
-            # Add edge from this firm instance to the Address node
-            edges.append(Edge(source=current_firm_node_id, target=address_id, label="LOCATED_AT", type="arrow", color={"color": "#cccccc"}))
+            
+            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_address else {"color": "#cccccc"}
+            edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_address else 1
+
+            edges.append(Edge(source=current_firm_node_id, target=address_id, label="LOCATED_AT", type="arrow", color=edge_color, width=edge_width))
 
         # Add Phone nodes and edges
         for field in ["poc_phone", "pi_phone"]:
             phone = (award.get(field) or "").strip()
             if phone and phone.lower() != "none":
                 phone_id = f"phone_node_{phone}"
+                is_red_flag_phone = phone_id in {f"phone_node_{p}" for p in red_flag_phones}
+
+                phone_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_phone else NODE_COLOR_PHONE
+                phone_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_phone else 20
+                phone_node_border = {"color": HIGHLIGHT_NODE_BORDER_COLOR, "width": HIGHLIGHT_NODE_BORDER_WIDTH} if is_red_flag_phone else None
+                phone_node_shape = "star" if is_red_flag_phone else "triangle"
+
                 if phone_id not in node_ids:
-                    nodes.append(Node(id=phone_id, label=phone, size=20, color=NODE_COLOR_PHONE, shape="triangle", font={"size": 12}))
+                    nodes.append(Node(id=phone_id, label=phone, size=phone_node_size, color=phone_node_color, shape=phone_node_shape, font={"size": 12}, borderWidth=phone_node_border.get("width", 1) if phone_node_border else 1, borderColor=phone_node_border.get("color", "black") if phone_node_border else "black"))
                     node_ids.add(phone_id)
-                # Add edge from this firm instance to the Phone node
-                edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color={"color": "#cccccc"}))
+                
+                edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_phone else {"color": "#cccccc"}
+                edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_phone else 1
+
+                edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color=edge_color, width=edge_width))
     
     if not nodes:
         st.info("No nodes to display in this graph group.")
@@ -240,7 +303,6 @@ def display_results(awards):
         st.write("No matching groups found where rows with different firm names share a common value.")
         return
 
-    # Compute summary info
     total_duplicates_amount = 0.0
     for comp in components:
         comp_rows = [awards[i] for i in comp]
