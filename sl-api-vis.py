@@ -1,3 +1,4 @@
+
 import requests
 from collections import defaultdict
 from difflib import SequenceMatcher
@@ -5,20 +6,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import streamlit as st
 import pandas as pd
-from streamlit_agraph import agraph, Node, Edge, Config
+from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
+# --- RESTORED ORIGINAL fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
     st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
     try:
-        response = requests.get(BASE_URL, params=params, timeout=10)
-    except requests.exceptions.RequestException as e:
+        response = requests.get(BASE_URL, params=params) # Original: no timeout, basic error handling
+    except Exception as e:
         st.sidebar.write(f"Error fetching page {page_number}: {e}")
         return []
     if response.status_code != 200:
@@ -30,14 +32,12 @@ def fetch_page(start, agency, year, rows, page_number):
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
+# --- RESTORED ORIGINAL fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
     page = 1
-    batch_size = 5
-    progress_bar = st.sidebar.progress(0)
-    status_text = st.sidebar.empty()
-
+    batch_size = 10  # Original batch_size
     with ThreadPoolExecutor(max_workers=batch_size) as executor:
         while True:
             futures = {}
@@ -46,8 +46,6 @@ def fetch_awards(agency="DOD", year=None, rows=100):
                 current_page = page + i
                 future = executor.submit(fetch_page, current_start, agency, year, rows, current_page)
                 futures[future] = (current_start, current_page)
-            
-            batch_awards = []
             batch_empty = False
             for future in as_completed(futures):
                 page_awards = future.result()
@@ -55,23 +53,15 @@ def fetch_awards(agency="DOD", year=None, rows=100):
                 if not page_awards:
                     batch_empty = True
                 else:
-                    status_text.write(f"Page {curr_page}: Fetched {len(page_awards)} rows")
-                    batch_awards.extend(page_awards)
-            
-            if not batch_awards and batch_empty:
+                    st.sidebar.write(f"Page {curr_page}: Fetched {len(page_awards)} rows")
+                    results.extend(page_awards)
+            if batch_empty: # Original breaking condition
                 break
-            
-            results.extend(batch_awards)
-            progress_value = min(len(results) / 10000, 1.0)
-            progress_bar.progress(progress_value)
-
             start += batch_size * rows
             page += batch_size
-
-    status_text.empty()
-    progress_bar.empty()
     st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
     return results
+# --- END RESTORED ORIGINAL FETCH FUNCTIONS ---
 
 def similar_address(addr1, addr2, threshold=0.8):
     if not addr1 or not addr2:
@@ -166,7 +156,6 @@ def find_duplicate_components(awards):
     return final_components
 
 
-# --- MODIFIED display_graph to take a single component ---
 def display_graph_for_component(awards, component_indices):
     nodes = []
     edges = []
@@ -271,17 +260,15 @@ def display_results(awards):
     col3.metric(label="Total Award Amount for Duplicates", value=f"${total_duplicates_amount:,.2f}")
 
     st.markdown("---") 
-    st.header("Interactive Duplicate Graphs by Group") # New header for individual graphs
+    st.header("Interactive Duplicate Graphs by Group")
 
-    # Iterate through each component and display its graph and table
     for comp_index, comp in enumerate(components):
         comp_rows = [awards[i] for i in comp]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
         
-        # Use st.expander to make each group collapsible, which improves UI
         with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
             st.markdown(f"#### Graph for Group {comp_index + 1}")
-            display_graph_for_component(awards, comp) # Pass only the current component
+            display_graph_for_component(awards, comp)
             st.markdown("---")
             
             st.markdown(f"#### Details for Group {comp_index + 1}")
@@ -309,7 +296,7 @@ def display_results(awards):
                     group_total += 0
             st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
             
-        st.markdown("---") # Add a horizontal rule between groups for readability
+        st.markdown("---")
 
 def main():
     st.title("AF OSI Procurement Fraud Tool V1")
