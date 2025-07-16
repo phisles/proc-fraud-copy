@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import streamlit as st
 import pandas as pd
-from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
+from streamlit_agraph import agraph, Node, Edge, Config
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
@@ -86,7 +86,7 @@ def find_duplicate_components(awards):
     awards = [award for award in awards if award is not None]
     n = len(awards)
     graph = {i: set() for i in range(n)}
-    edge_reasons = defaultdict(set) 
+    edge_reasons = defaultdict(set)
 
     def add_edge_if_firms_differ(idx1, idx2, reason):
         firm_i = normalize_firm_name(awards[idx1]["firm"])
@@ -132,27 +132,27 @@ def find_duplicate_components(awards):
 
     seen = set()
     components = []
-    components_with_reasons = [] 
+    components_with_reasons = []
 
     for i in range(n):
         if i not in seen:
             stack = [i]
             comp_indices = []
-            comp_reasons_for_graph = defaultdict(set) 
-            
-            red_flag_attribute_strings = defaultdict(set) 
-            
+            comp_reasons_for_graph = defaultdict(set)
+
+            red_flag_attribute_strings = defaultdict(set)
+
             while stack:
                 cur = stack.pop()
                 if cur in seen:
                     continue
                 seen.add(cur)
                 comp_indices.append(cur)
-                
+
                 for neigh in graph[cur]:
                     if neigh not in seen:
                         stack.append(neigh)
-                    
+
                     pair = tuple(sorted((cur, neigh)))
                     if pair in edge_reasons:
                         comp_reasons_for_graph[pair].update(edge_reasons[pair])
@@ -171,15 +171,15 @@ def find_duplicate_components(awards):
                 firm_set = set(normalize_firm_name(awards[idx]["firm"]) for idx in comp_indices)
                 if len(firm_set) > 1:
                     components_with_reasons.append((comp_indices, comp_reasons_for_graph, red_flag_attribute_strings))
-    
+
     return components_with_reasons
 
 # --- display_graph_for_component with styling and fit=True changes ---
 def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
-    
-    node_ids = set() 
+
+    node_ids = set()
 
     # --- Node/Edge Colors and Sizes (Revised for Grey Scale and Prominent Red Stars) ---
     GREY_DARK = "#444444"
@@ -210,8 +210,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
     NODE_SIZE_ATTR_DEFAULT = 15 # Significantly smaller for non-red-flag attributes
 
 
-    firm_node_map = {} 
-    address_node_id_map = {} 
+    firm_node_map = {}
+    address_node_id_map = {}
 
     # --- Identify firms that are part of a 'red flag' link directly (for firm node border) ---
     firms_in_red_flag_link = set()
@@ -224,22 +224,22 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
     for award_idx in component_indices:
         award = awards[award_idx]
         firm_name = normalize_firm_name(award.get("firm", "Unknown Firm"))
-        
+
         firm_node_id_for_group = f"firm_node_{firm_name}"
         if firm_node_id_for_group not in node_ids:
             is_firm_red_flag = firm_name in firms_in_red_flag_link
             firm_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_firm_red_flag else 1
             firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black"
 
-            nodes.append(Node(id=firm_node_id_for_group, label=firm_name, 
-                              size=NODE_SIZE_FIRM, 
-                              color=NODE_COLOR_FIRM, 
+            nodes.append(Node(id=firm_node_id_for_group, label=firm_name,
+                              size=NODE_SIZE_FIRM,
+                              color=NODE_COLOR_FIRM,
                               shape="dot", font={"size": 14},
                               borderWidth=firm_border_width, borderColor=firm_border_color))
             node_ids.add(firm_node_id_for_group)
             firm_node_map[firm_name] = firm_node_id_for_group
 
-        current_firm_node_id = firm_node_map[firm_name] 
+        current_firm_node_id = firm_node_map[firm_name]
 
         # Add URL node and edge
         company_url = (award.get("company_url") or "").strip()
@@ -258,7 +258,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
                 nodes.append(Node(id=url_id, label=company_url, size=url_node_size, color=url_node_color, shape=url_node_shape, font={"size": 10}, # Smaller font for smaller nodes
                                   borderWidth=url_node_border_width, borderColor=url_node_border_color))
                 node_ids.add(url_id)
-            
+
             edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_url_attr else {"color": GREY_LIGHT} # Light grey for non-highlighted edges
             edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_url_attr else 1
             edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color=edge_color, width=edge_width))
@@ -283,7 +283,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
                 nodes.append(Node(id=address_id, label=address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 10}, # Smaller font
                                   borderWidth=address_node_border_width, borderColor=address_node_border_color))
                 node_ids.add(address_id)
-            
+
             edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_address_attr else {"color": GREY_LIGHT} # Light grey for non-highlighted edges
             edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_address_attr else 1
 
@@ -307,14 +307,14 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
                     nodes.append(Node(id=phone_id, label=phone, size=phone_node_size, color=phone_node_color, shape=phone_node_shape, font={"size": 10}, # Smaller font
                                       borderWidth=phone_node_border_width, borderColor=phone_node_border_color))
                     node_ids.add(phone_id)
-                
+
                 edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_phone_attr else {"color": GREY_LIGHT}
                 edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_phone_attr else 1
 
                 edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color=edge_color, width=edge_width))
-    
+
     # --- Add SIMILAR_TO edges between addresses that caused duplicate flags ---
-    added_similar_address_edges = set() 
+    added_similar_address_edges = set()
 
     for (idx1, idx2), reasons in component_reasons.items():
         award1 = awards[idx1]
@@ -326,7 +326,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             if addr1 in address_node_id_map and addr2 in address_node_id_map:
                 node_id1 = address_node_id_map[addr1]
                 node_id2 = address_node_id_map[addr2]
-                
+
                 edge_pair = tuple(sorted((node_id1, node_id2)))
                 if edge_pair not in added_similar_address_edges and node_id1 != node_id2:
                     edges.append(Edge(source=node_id1, target=node_id2, label="SIMILAR_TO", type="arrow",
@@ -341,8 +341,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
         return
 
     config = Config(
-        width=800, 
-        height=500, 
+        width=800,
+        height=500,
         directed=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
@@ -357,14 +357,13 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
 
 def display_results(awards):
-    # This now gets all three pieces of information from find_duplicate_components
-    components_data = find_duplicate_components(awards) 
+    components_data = find_duplicate_components(awards)
     if not components_data:
         st.write("No matching groups found where rows with different firm names share a common value.")
         return
 
     total_duplicates_amount = 0.0
-    for comp_indices, _, _ in components_data: # Unpack to get just indices for sum
+    for comp_indices, _, _ in components_data:
         comp_rows = [awards[i] for i in comp_indices]
         group_total = 0.0
         for award in comp_rows:
@@ -381,65 +380,85 @@ def display_results(awards):
     col2.metric(label="Duplicate Entities", value=duplicate_entities)
     col3.metric(label="Total Award Amount for Duplicates", value=f"${total_duplicates_amount:,.2f}")
 
-    st.markdown("---") 
-    st.header("Interactive Duplicate Graphs by Group")
+    st.markdown("---")
+    st.header("Select a Group to View its Knowledge Graph and Details")
 
-    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): # Unpack all three
+    # This is the key change: a placeholder for the graph, and separate expanders for details
+    graph_container = st.container() # Create a dedicated container for the graph
+    st.markdown("---") # Separator below the graph selection
+
+    # Buttons for each group to display its graph in the `graph_container`
+    group_buttons_cols = st.columns(min(len(components_data), 5)) # Up to 5 buttons per row
+    for i, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data):
+        with group_buttons_cols[i % len(group_buttons_cols)]: # Distribute buttons across columns
+            distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
+            if st.button(f"Group {i + 1}: {', '.join(distinct_firms)}", key=f"view_graph_btn_{i}"):
+                st.session_state.selected_group_idx = i # Store the selected group index
+
+    # Display graph and details based on selected_group_idx
+    if 'selected_group_idx' in st.session_state and st.session_state.selected_group_idx is not None:
+        selected_idx = st.session_state.selected_group_idx
+        comp_indices, comp_reasons, red_flag_attribute_strings = components_data[selected_idx]
         comp_rows = [awards[i] for i in comp_indices]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
-        
-        with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
-            st.markdown(f"#### Graph for Group {comp_index + 1}")
-            # Pass all three pieces of data to display_graph_for_component
-            display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings) 
-            st.markdown("---")
-            
-            st.markdown(f"#### Details for Group {comp_index + 1}")
-            df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
-            
-            required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
-            for col in required_cols:
-                if col not in df.columns:
-                    df[col] = "N/A"
 
-            df["Link"] = df["award_link"].apply(
-                lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
-            )
-            
-            display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
-            df_display = df[[col for col in display_cols if col in df.columns]]
+        with graph_container: # Render the graph in the dedicated container
+            st.markdown(f"### Knowledge Graph for Group {selected_idx + 1}: {', '.join(distinct_firms)}")
+            display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings)
+            st.markdown("---") # Separator after the graph
 
-            st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
-            
-            group_total = 0.0
-            for award in comp_rows:
-                try:
-                    group_total += float(award.get("award_amount", 0))
-                except ValueError:
-                    group_total += 0
-            st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
-            
-        st.markdown("---")
+        # Now, the expander just holds the table details for the selected group
+        st.markdown(f"#### Details for Group {selected_idx + 1}")
+        df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
+
+        required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = "N/A"
+
+        df["Link"] = df["award_link"].apply(
+            lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
+        )
+
+        display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
+        df_display = df[[col for col in display_cols if col in df.columns]]
+
+        st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
+
+        group_total = 0.0
+        for award in comp_rows:
+            try:
+                group_total += float(award.get("award_amount", 0))
+            except ValueError:
+                group_total += 0
+        st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
+    else:
+        st.info("Click a button above to view the graph and details for a duplicate group.")
+
+    st.markdown("---") # Final separator
 
 def main():
     st.title("AF OSI Procurement Fraud Tool V1")
-    
+
     st.sidebar.header("Filters")
     year = st.sidebar.number_input("Year", value=2023, step=1, help="Year to fetch SBIR awards from.")
     agency = st.sidebar.text_input("Agency", "DOD", help="e.g., DOD, DOE, NIH. Case-insensitive.")
     branch = st.sidebar.text_input("Branch (optional)", "USAF", help="e.g., USAF, Army, Navy. Leave blank for all branches within the agency.")
-    
+
     run_clicked = st.sidebar.button("Run Analysis")
-    
+
     if not run_clicked:
         st.info("Adjust the filters in the sidebar and click 'Run Analysis' to fetch data.")
+        # Clear the session state for selected_group_idx when filters are changed
+        if 'selected_group_idx' in st.session_state:
+            st.session_state.selected_group_idx = None
     else:
         st.sidebar.write("---")
         st.sidebar.write("Starting data fetch...")
-        
+
         with st.spinner('Fetching awards data... This might take a while for large datasets.'):
             awards = fetch_awards(agency=agency, year=year, rows=100)
-        
+
         if not awards:
             st.warning("No awards data fetched. Please check the filters and try again.")
             return
@@ -450,15 +469,17 @@ def main():
         else:
             filtered_awards = awards
             st.sidebar.write(f"Total rows fetched: {len(filtered_awards)}")
-        
+
         if not filtered_awards:
             st.warning("No awards found after applying branch filter. Try a different branch or leave it blank.")
             return
 
         st.sidebar.write("Running duplicate analysis...")
+        # Reset selected group when new analysis is run
+        st.session_state.selected_group_idx = None
         with st.spinner('Analyzing duplicates and building graph...'):
             display_results(filtered_awards)
-        
+
         st.success("Analysis complete!")
 
 if __name__ == "__main__":
