@@ -27,6 +27,12 @@ def fetch_page(start, agency, year, rows, page_number):
         st.sidebar.write(f"Error: Unable to fetch data (Status Code: {response.status_code})")
         return []
     data = response.json()
+
+    # Convert the JSON data to a string and print the first 200 characters
+    # This will be visible in the terminal where your Streamlit app is running.
+    data_str = json.dumps(data, indent=2) # indent for readability, though only first 200 chars will show
+    print(f"First 200 characters of JSON response:\n{data_str[:200]}...")
+
     if isinstance(data, list):
         return data
     st.sidebar.write("Unexpected response format, stopping pagination.")
