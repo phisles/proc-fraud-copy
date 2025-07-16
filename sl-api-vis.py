@@ -11,6 +11,7 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
+# --- ORIGINAL WORKING fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
@@ -30,6 +31,7 @@ def fetch_page(start, agency, year, rows, page_number):
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
+# --- ORIGINAL WORKING fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
@@ -79,11 +81,11 @@ def normalize_firm_name(name):
             n = n[:-len(suffix)].strip()
     return n
 
+# --- find_duplicate_components (as it was in the last version where detection worked) ---
 def find_duplicate_components(awards):
     awards = [award for award in awards if award is not None]
     n = len(awards)
     graph = {i: set() for i in range(n)}
-    # Store reasons for edges: {(award_idx1, award_idx2): set("reason1", "reason2")}
     edge_reasons = defaultdict(set) 
 
     def add_edge_if_firms_differ(idx1, idx2, reason):
@@ -92,7 +94,6 @@ def find_duplicate_components(awards):
         if firm_i != firm_j:
             graph[idx1].add(idx2)
             graph[idx2].add(idx1)
-            # Use tuple(sorted((idx1, idx2))) to ensure the key is consistent regardless of order
             edge_reasons[tuple(sorted((idx1, idx2)))].add(reason)
 
     url_to_indices = defaultdict(list)
@@ -173,32 +174,44 @@ def find_duplicate_components(awards):
     
     return components_with_reasons
 
-# --- MODIFIED display_graph_for_component to link similar addresses ---
+# --- display_graph_for_component with styling and fit=True changes ---
 def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
     
     node_ids = set() 
 
-    NODE_COLOR_FIRM = "#4285F4" 
-    NODE_COLOR_URL = "#34A853"  
-    NODE_COLOR_ADDRESS = "#FBBC04"
-    NODE_COLOR_PHONE = "#EA4335"
+    # --- Node/Edge Colors and Sizes (Revised for Grey Scale and Prominent Red Stars) ---
+    GREY_DARK = "#444444"
+    GREY_MEDIUM = "#888888"
+    GREY_LIGHT = "#BBBBBB"
 
-    HIGHLIGHT_COLOR_EDGE = "#FF0000" 
-    HIGHLIGHT_EDGE_WIDTH = 3
-    HIGHLIGHT_NODE_BORDER_COLOR = "#FF0000" 
-    HIGHLIGHT_NODE_BORDER_WIDTH = 3
-    HIGHLIGHT_NODE_SIZE_INCREASE = 1.2 
+    # Base colors (shades of grey)
+    NODE_COLOR_FIRM = GREY_DARK
+    NODE_COLOR_URL = GREY_MEDIUM
+    NODE_COLOR_ADDRESS = GREY_MEDIUM
+    NODE_COLOR_PHONE = GREY_MEDIUM
+
+    # Highlight colors (Red for "red flags")
+    HIGHLIGHT_COLOR_NODE = "#FF0000" # Bright Red for the star nodes
+    HIGHLIGHT_COLOR_EDGE = "#FF0000" # Bright Red for the connecting edges
+    HIGHLIGHT_EDGE_WIDTH = 3 # Thickness of red edges
+    HIGHLIGHT_NODE_BORDER_COLOR = "#FF0000" # Red border for firms
+    HIGHLIGHT_NODE_BORDER_WIDTH = 3 # Thickness of firm border
+    HIGHLIGHT_NODE_SIZE_FACTOR = 1.8 # Make star nodes significantly larger
 
     # New style for the "SIMILAR_TO" address link
-    SIMILAR_ADDRESS_EDGE_COLOR = "#FF6347" # Tomato color
-    SIMILAR_ADDRESS_EDGE_WIDTH = 4
+    SIMILAR_ADDRESS_EDGE_COLOR = "#FF0000" # Use the same red for consistency
+    SIMILAR_ADDRESS_EDGE_WIDTH = 4 # Even thicker
     SIMILAR_ADDRESS_EDGE_DASHES = [10, 5] # Dashed line
 
-    firm_node_map = {} 
-    address_node_id_map = {} # To quickly get node ID for an address string
+    # --- Node Sizes (Adjusted for prominence) ---
+    NODE_SIZE_FIRM = 35 # Slightly larger base for firms
+    NODE_SIZE_ATTR_DEFAULT = 15 # Significantly smaller for non-red-flag attributes
 
+
+    firm_node_map = {} 
+    address_node_id_map = {} 
 
     # --- Identify firms that are part of a 'red flag' link directly (for firm node border) ---
     firms_in_red_flag_link = set()
@@ -218,7 +231,10 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             firm_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_firm_red_flag else 1
             firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black"
 
-            nodes.append(Node(id=firm_node_id_for_group, label=firm_name, size=30, color=NODE_COLOR_FIRM, shape="dot", font={"size": 14},
+            nodes.append(Node(id=firm_node_id_for_group, label=firm_name, 
+                              size=NODE_SIZE_FIRM, 
+                              color=NODE_COLOR_FIRM, 
+                              shape="dot", font={"size": 14},
                               borderWidth=firm_border_width, borderColor=firm_border_color))
             node_ids.add(firm_node_id_for_group)
             firm_node_map[firm_name] = firm_node_id_for_group
@@ -231,19 +247,19 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             url_id = f"url_node_{company_url}"
             is_red_flag_url_attr = company_url in red_flag_attribute_strings['url']
 
-            url_node_color = NODE_COLOR_URL
-            url_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_url_attr else 20
+            url_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_url_attr else NODE_COLOR_URL
+            url_node_size = NODE_SIZE_ATTR_DEFAULT * HIGHLIGHT_NODE_SIZE_FACTOR if is_red_flag_url_attr else NODE_SIZE_ATTR_DEFAULT
             url_node_shape = "star" if is_red_flag_url_attr else "box"
             url_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_url_attr else 1
             url_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_url_attr else "black"
 
 
             if url_id not in node_ids:
-                nodes.append(Node(id=url_id, label=company_url, size=url_node_size, color=url_node_color, shape=url_node_shape, font={"size": 12},
+                nodes.append(Node(id=url_id, label=company_url, size=url_node_size, color=url_node_color, shape=url_node_shape, font={"size": 10}, # Smaller font for smaller nodes
                                   borderWidth=url_node_border_width, borderColor=url_node_border_color))
                 node_ids.add(url_id)
             
-            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_url_attr else {"color": "#cccccc"}
+            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_url_attr else {"color": GREY_LIGHT} # Light grey for non-highlighted edges
             edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_url_attr else 1
             edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color=edge_color, width=edge_width))
 
@@ -256,19 +272,19 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
             is_red_flag_address_attr = address in red_flag_attribute_strings['address']
 
-            address_node_color = NODE_COLOR_ADDRESS
-            address_node_size = 25 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_address_attr else 25
+            address_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_address_attr else NODE_COLOR_ADDRESS
+            address_node_size = NODE_SIZE_ATTR_DEFAULT * HIGHLIGHT_NODE_SIZE_FACTOR if is_red_flag_address_attr else NODE_SIZE_ATTR_DEFAULT
             address_node_shape = "star" if is_red_flag_address_attr else "hexagon"
             address_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_address_attr else 1
             address_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_address_attr else "black"
 
 
             if address_id not in node_ids:
-                nodes.append(Node(id=address_id, label=address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 12},
+                nodes.append(Node(id=address_id, label=address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 10}, # Smaller font
                                   borderWidth=address_node_border_width, borderColor=address_node_border_color))
                 node_ids.add(address_id)
             
-            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_address_attr else {"color": "#cccccc"}
+            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_address_attr else {"color": GREY_LIGHT} # Light grey for non-highlighted edges
             edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_address_attr else 1
 
             edges.append(Edge(source=current_firm_node_id, target=address_id, label="LOCATED_AT", type="arrow", color=edge_color, width=edge_width))
@@ -280,25 +296,25 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
                 phone_id = f"phone_node_{phone}"
                 is_red_flag_phone_attr = phone in red_flag_attribute_strings['phone']
 
-                phone_node_color = NODE_COLOR_PHONE
-                phone_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_phone_attr else 20
+                phone_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_phone_attr else NODE_COLOR_PHONE
+                phone_node_size = NODE_SIZE_ATTR_DEFAULT * HIGHLIGHT_NODE_SIZE_FACTOR if is_red_flag_phone_attr else NODE_SIZE_ATTR_DEFAULT
                 phone_node_shape = "star" if is_red_flag_phone_attr else "triangle"
                 phone_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_phone_attr else 1
                 phone_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_phone_attr else "black"
 
 
                 if phone_id not in node_ids:
-                    nodes.append(Node(id=phone_id, label=phone, size=phone_node_size, color=phone_node_color, shape=phone_node_shape, font={"size": 12},
+                    nodes.append(Node(id=phone_id, label=phone, size=phone_node_size, color=phone_node_color, shape=phone_node_shape, font={"size": 10}, # Smaller font
                                       borderWidth=phone_node_border_width, borderColor=phone_node_border_color))
                     node_ids.add(phone_id)
                 
-                edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_phone_attr else {"color": "#cccccc"}
+                edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_phone_attr else {"color": GREY_LIGHT}
                 edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_phone_attr else 1
 
                 edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color=edge_color, width=edge_width))
     
     # --- Add SIMILAR_TO edges between addresses that caused duplicate flags ---
-    added_similar_address_edges = set() # To prevent drawing the same similar_address edge twice
+    added_similar_address_edges = set() 
 
     for (idx1, idx2), reasons in component_reasons.items():
         award1 = awards[idx1]
@@ -307,15 +323,12 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
         addr2 = (award2.get("address1") or "").strip()
 
         if f"similar_address:{addr1} vs {addr2}" in reasons or f"similar_address:{addr2} vs {addr1}" in reasons:
-            # Ensure both address strings have corresponding nodes in the current graph
             if addr1 in address_node_id_map and addr2 in address_node_id_map:
                 node_id1 = address_node_id_map[addr1]
                 node_id2 = address_node_id_map[addr2]
                 
-                # Check if this specific similar-address edge has already been added
-                # Important for addresses like A-B, B-C, where B might connect to A and C.
                 edge_pair = tuple(sorted((node_id1, node_id2)))
-                if edge_pair not in added_similar_address_edges and node_id1 != node_id2: # Don't draw self-loops
+                if edge_pair not in added_similar_address_edges and node_id1 != node_id2:
                     edges.append(Edge(source=node_id1, target=node_id2, label="SIMILAR_TO", type="arrow",
                                       color={"color": SIMILAR_ADDRESS_EDGE_COLOR},
                                       width=SIMILAR_ADDRESS_EDGE_WIDTH,
@@ -337,19 +350,21 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
         physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -1000, "centralGravity": 0.1, "springLength": 80, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
+        fit=True, # ADDED: Fit graph to view on load
     )
 
     agraph(nodes=nodes, edges=edges, config=config)
 
 
 def display_results(awards):
-    components_with_reasons = find_duplicate_components(awards) # Now returns reasons
-    if not components_with_reasons:
+    # This now gets all three pieces of information from find_duplicate_components
+    components_data = find_duplicate_components(awards) 
+    if not components_data:
         st.write("No matching groups found where rows with different firm names share a common value.")
         return
 
     total_duplicates_amount = 0.0
-    for comp_indices, _, _ in components_with_reasons: # Unpack to get just indices for sum
+    for comp_indices, _, _ in components_data: # Unpack to get just indices for sum
         comp_rows = [awards[i] for i in comp_indices]
         group_total = 0.0
         for award in comp_rows:
@@ -358,7 +373,7 @@ def display_results(awards):
             except ValueError:
                 group_total += 0
         total_duplicates_amount += group_total
-    duplicate_entities = sum(len(comp_indices) for comp_indices, _, _ in components_with_reasons)
+    duplicate_entities = sum(len(comp_indices) for comp_indices, _, _ in components_data)
     total_awards = len(awards)
 
     col1, col2, col3 = st.columns(3)
@@ -369,13 +384,13 @@ def display_results(awards):
     st.markdown("---") 
     st.header("Interactive Duplicate Graphs by Group")
 
-    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_with_reasons): # Unpack again
+    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): # Unpack all three
         comp_rows = [awards[i] for i in comp_indices]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
         
         with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
             st.markdown(f"#### Graph for Group {comp_index + 1}")
-            # Pass reasons and red_flag_attribute_strings to the graph display function
+            # Pass all three pieces of data to display_graph_for_component
             display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings) 
             st.markdown("---")
             
