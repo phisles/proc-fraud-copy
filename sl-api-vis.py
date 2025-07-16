@@ -7,6 +7,9 @@ import streamlit as st
 import pandas as pd
 import json
 from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
+import folium # Import folium for mapping
+from streamlit_folium import st_folium # Import for displaying folium maps in Streamlit
+
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
@@ -365,6 +368,27 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
     agraph(nodes=nodes, edges=edges, config=config)
 
+# --- New function to get coordinates from address ---
+def get_coordinates(address, city, state):
+    if not address or not city or not state:
+        return None
+    full_address = f"{address}, {city}, {state}"
+    # Using Nominatim OpenStreetMap API for geocoding
+    # It's good practice to include a user-agent to identify your application
+    headers = {'User-Agent': 'SBIR_Duplicate_Finder/1.0 (your_email@example.com)'}
+    try:
+        response = requests.get(f"https://nominatim.openstreetmap.org/search?q={full_address}&format=json&limit=1", headers=headers)
+        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        if data:
+            lat = float(data[0]['lat'])
+            lon = float(data[0]['lon'])
+            return lat, lon
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Error fetching coordinates for {full_address}: {e}")
+    except ValueError:
+        st.warning(f"Could not parse coordinates for {full_address}")
+    return None
 
 def display_results(awards):
     components_data = find_duplicate_components(awards)
@@ -404,6 +428,36 @@ def display_results(awards):
         # Display the Knowledge Graph directly
         display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings)
         st.markdown("---") # Separator after the graph
+
+        # --- Mapping Tool Integration ---
+        st.subheader(f"Location Map for Group {comp_index + 1}")
+        locations = []
+        for award in comp_rows:
+            address1 = (award.get("address1") or "").strip()
+            city = (award.get("city") or "").strip()
+            state = (award.get("state") or "").strip()
+            firm_name = award.get("firm", "Unknown Firm")
+
+            coords = get_coordinates(address1, city, state)
+            if coords:
+                locations.append({"firm": firm_name, "lat": coords[0], "lon": coords[1], "address": f"{address1}, {city}, {state}"})
+        
+        if locations:
+            # Center map on the first location, or a default if no locations
+            map_center = [locations[0]['lat'], locations[0]['lon']] if locations else [39.8283, -98.5795] # US center
+            m = folium.Map(location=map_center, zoom_start=5)
+
+            for loc in locations:
+                folium.Marker(
+                    location=[loc['lat'], loc['lon']],
+                    popup=f"<b>{loc['firm']}</b><br>{loc['address']}",
+                    tooltip=loc['firm']
+                ).add_to(m)
+            
+            st_folium(m, width=800, height=400)
+        else:
+            st.info("No valid addresses found to display on the map for this group.")
+        st.markdown("---") # Separator after the map
 
         # Display the details table directly below the graph, optionally in an expander for compactness
         # Keeping this in an expander is usually fine, as tables are less prone to rendering issues
