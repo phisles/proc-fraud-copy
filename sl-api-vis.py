@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import streamlit as st
 import pandas as pd
-from streamlit_agraph import agraph, Node, Edge, Config
+from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
@@ -381,61 +381,51 @@ def display_results(awards):
     col3.metric(label="Total Award Amount for Duplicates", value=f"${total_duplicates_amount:,.2f}")
 
     st.markdown("---")
-    st.header("Select a Group to View its Knowledge Graph and Details")
+    st.header("Duplicate Groups (Knowledge Graph & Details)")
 
-    # This is the key change: a placeholder for the graph, and separate expanders for details
-    graph_container = st.container() # Create a dedicated container for the graph
-    st.markdown("---") # Separator below the graph selection
-
-    # Buttons for each group to display its graph in the `graph_container`
-    group_buttons_cols = st.columns(min(len(components_data), 5)) # Up to 5 buttons per row
-    for i, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data):
-        with group_buttons_cols[i % len(group_buttons_cols)]: # Distribute buttons across columns
-            distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
-            if st.button(f"Group {i + 1}: {', '.join(distinct_firms)}", key=f"view_graph_btn_{i}"):
-                st.session_state.selected_group_idx = i # Store the selected group index
-
-    # Display graph and details based on selected_group_idx
-    if 'selected_group_idx' in st.session_state and st.session_state.selected_group_idx is not None:
-        selected_idx = st.session_state.selected_group_idx
-        comp_indices, comp_reasons, red_flag_attribute_strings = components_data[selected_idx]
+    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): # Unpack all three
         comp_rows = [awards[i] for i in comp_indices]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
 
-        with graph_container: # Render the graph in the dedicated container
-            st.markdown(f"### Knowledge Graph for Group {selected_idx + 1}: {', '.join(distinct_firms)}")
-            display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings)
-            st.markdown("---") # Separator after the graph
+        # Directly display the header for the group
+        st.markdown(f"## Group {comp_index + 1}: {', '.join(distinct_firms)}")
+        st.markdown("---") # Separator before the graph
 
-        # Now, the expander just holds the table details for the selected group
-        st.markdown(f"#### Details for Group {selected_idx + 1}")
-        df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
+        # Display the Knowledge Graph directly
+        display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings)
+        st.markdown("---") # Separator after the graph
 
-        required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = "N/A"
+        # Display the details table directly below the graph, optionally in an expander for compactness
+        # Keeping this in an expander is usually fine, as tables are less prone to rendering issues
+        # than interactive graph components. If you want ALL content visible without expanders,
+        # remove this st.expander as well.
+        with st.expander(f"Click to View Detailed Data for Group {comp_index+1}", expanded=False):
+            st.markdown(f"#### Detailed Data for Group {comp_index + 1}")
+            df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
 
-        df["Link"] = df["award_link"].apply(
-            lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
-        )
+            required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = "N/A"
 
-        display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
-        df_display = df[[col for col in display_cols if col in df.columns]]
+            df["Link"] = df["award_link"].apply(
+                lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
+            )
 
-        st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
+            display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
+            df_display = df[[col for col in display_cols if col in df.columns]]
 
-        group_total = 0.0
-        for award in comp_rows:
-            try:
-                group_total += float(award.get("award_amount", 0))
-            except ValueError:
-                group_total += 0
-        st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
-    else:
-        st.info("Click a button above to view the graph and details for a duplicate group.")
+            st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
 
-    st.markdown("---") # Final separator
+            group_total = 0.0
+            for award in comp_rows:
+                try:
+                    group_total += float(award.get("award_amount", 0))
+                except ValueError:
+                    group_total += 0
+            st.write(f"**Total Award Amount for this group:** ${group_total:,.2f}")
+
+        st.markdown("---") # A final separator between groups
 
 def main():
     st.title("AF OSI Procurement Fraud Tool V1")
@@ -449,9 +439,6 @@ def main():
 
     if not run_clicked:
         st.info("Adjust the filters in the sidebar and click 'Run Analysis' to fetch data.")
-        # Clear the session state for selected_group_idx when filters are changed
-        if 'selected_group_idx' in st.session_state:
-            st.session_state.selected_group_idx = None
     else:
         st.sidebar.write("---")
         st.sidebar.write("Starting data fetch...")
@@ -475,8 +462,6 @@ def main():
             return
 
         st.sidebar.write("Running duplicate analysis...")
-        # Reset selected group when new analysis is run
-        st.session_state.selected_group_idx = None
         with st.spinner('Analyzing duplicates and building graph...'):
             display_results(filtered_awards)
 
