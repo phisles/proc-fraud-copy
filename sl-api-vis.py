@@ -11,7 +11,6 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
-# --- ORIGINAL WORKING fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
@@ -31,7 +30,6 @@ def fetch_page(start, agency, year, rows, page_number):
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
-# --- ORIGINAL WORKING fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
@@ -81,7 +79,6 @@ def normalize_firm_name(name):
             n = n[:-len(suffix)].strip()
     return n
 
-# --- find_duplicate_components (as it was in the last version where detection worked) ---
 def find_duplicate_components(awards):
     awards = [award for award in awards if award is not None]
     n = len(awards)
@@ -174,7 +171,7 @@ def find_duplicate_components(awards):
     
     return components_with_reasons
 
-# --- display_graph_for_component with styling and fit=True changes ---
+# --- MODIFIED display_graph_for_component with styling and fit=True changes ---
 def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
@@ -342,22 +339,22 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
     config = Config(
         width=800, 
-        height=500, 
+        height=600, # Increased height slightly for better fit
         directed=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
         collapsible=True,
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
-        physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -1000, "centralGravity": 0.1, "springLength": 80, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
-        fit=True, # ADDED: Fit graph to view on load
+        # Physics adjusted slightly for better initial spread
+        physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -500, "centralGravity": 0.05, "springLength": 100, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
+        fit=True, # Ensure fit=True is here
     )
 
     agraph(nodes=nodes, edges=edges, config=config)
 
 
 def display_results(awards):
-    # This now gets all three pieces of information from find_duplicate_components
     components_data = find_duplicate_components(awards) 
     if not components_data:
         st.write("No matching groups found where rows with different firm names share a common value.")
@@ -390,7 +387,6 @@ def display_results(awards):
         
         with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
             st.markdown(f"#### Graph for Group {comp_index + 1}")
-            # Pass all three pieces of data to display_graph_for_component
             display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings) 
             st.markdown("---")
             
