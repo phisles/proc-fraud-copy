@@ -15,33 +15,43 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
-# --- ORIGINAL WORKING fetch_page FUNCTION ---
+# Initialize session state for run_analysis and filter values if not already present
+if 'run_analysis' not in st.session_state:
+    st.session_state.run_analysis = False
+if 'filter_year' not in st.session_state:
+    st.session_state.filter_year = 2023 # Default value
+if 'filter_agency' not in st.session_state:
+    st.session_state.filter_agency = "DOD" # Default value
+if 'filter_branch' not in st.session_state:
+    st.session_state.filter_branch = "USAF" # Default value
+
+# --- Cached Data Fetching Functions ---
+@st.cache_data(ttl=3600) # Cache for 1 hour
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
-    st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
+    # Using print instead of st.sidebar.write inside cached function
+    print(f"Requesting Page {page_number} | Start Offset: {start}")
     try:
         response = requests.get(BASE_URL, params=params)
     except Exception as e:
-        st.sidebar.write(f"Error fetching page {page_number}: {e}")
+        print(f"Error fetching page {page_number}: {e}") # Using print
         return []
     if response.status_code != 200:
-        st.sidebar.write(f"Error: Unable to fetch data (Status Code: {response.status_code})")
+        print(f"Error: Unable to fetch data (Status Code: {response.status_code})") # Using print
         return []
     data = response.json()
 
-    # Convert the JSON data to a string and print the first 200 characters
-    # This will be visible in the terminal where your Streamlit app is running.
-    data_str = json.dumps(data, indent=2) # indent for readability, though only first 200 chars will show
+    data_str = json.dumps(data, indent=2)
     print(f"First 200 characters of JSON response:\n{data_str[:200]}...")
 
     if isinstance(data, list):
         return data
-    st.sidebar.write("Unexpected response format, stopping pagination.")
+    print("Unexpected response format, stopping pagination.") # Using print
     return []
 
-# --- ORIGINAL WORKING fetch_awards FUNCTION ---
+@st.cache_data(ttl=3600) # Cache for 1 hour
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
@@ -62,13 +72,14 @@ def fetch_awards(agency="DOD", year=None, rows=100):
                 if not page_awards:
                     batch_empty = True
                 else:
-                    st.sidebar.write(f"Page {curr_page}: Fetched {len(page_awards)} rows")
+                    # Using print instead of st.sidebar.write inside cached function
+                    print(f"Page {curr_page}: Fetched {len(page_awards)} rows")
                     results.extend(page_awards)
             if batch_empty:
                 break
             start += batch_size * rows
             page += batch_size
-    st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
+    print(f"\nTotal rows collected before filtering: {len(results)}") # Using print
     return results
 
 def similar_address(addr1, addr2, threshold=0.8):
@@ -91,7 +102,7 @@ def normalize_firm_name(name):
             n = n[:-len(suffix)].strip()
     return n
 
-# --- find_duplicate_components (as it was in the last version where detection worked) ---
+@st.cache_data(ttl=3600) # Cache the duplicate finding logic
 def find_duplicate_components(awards):
     awards = [award for award in awards if award is not None]
     n = len(awards)
@@ -141,7 +152,6 @@ def find_duplicate_components(awards):
                 add_edge_if_firms_differ(i, j, f"similar_address:{addr_i} vs {addr_j}")
 
     seen = set()
-    components = []
     components_with_reasons = []
 
     for i in range(n):
@@ -184,7 +194,6 @@ def find_duplicate_components(awards):
 
     return components_with_reasons
 
-# --- display_graph_for_component with styling and fit=True changes ---
 def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
@@ -369,13 +378,12 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
     agraph(nodes=nodes, edges=edges, config=config)
 
 # --- New function to get coordinates from address ---
+@st.cache_data(ttl=86400) # Cache coordinates for 24 hours
 def get_coordinates(address, city, state):
     if not address or not city or not state:
         return None
     full_address = f"{address}, {city}, {state}"
-    # Using Nominatim OpenStreetMap API for geocoding
-    # It's good practice to include a user-agent to identify your application
-    headers = {'User-Agent': 'SBIR_Duplicate_Finder/1.0 (your_email@example.com)'}
+    headers = {'User-Agent': 'SBIR_Duplicate_Finder/1.0 (your_email@example.com)'} # Replace with your actual email
     try:
         response = requests.get(f"https://nominatim.openstreetmap.org/search?q={full_address}&format=json&limit=1", headers=headers)
         response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
@@ -385,9 +393,9 @@ def get_coordinates(address, city, state):
             lon = float(data[0]['lon'])
             return lat, lon
     except requests.exceptions.RequestException as e:
-        st.warning(f"Error fetching coordinates for {full_address}: {e}")
+        print(f"Error fetching coordinates for {full_address}: {e}") # Use print in cached function
     except ValueError:
-        st.warning(f"Could not parse coordinates for {full_address}")
+        print(f"Could not parse coordinates for {full_address}") # Use print in cached function
     return None
 
 def display_results(awards):
@@ -460,9 +468,6 @@ def display_results(awards):
         st.markdown("---") # Separator after the map
 
         # Display the details table directly below the graph, optionally in an expander for compactness
-        # Keeping this in an expander is usually fine, as tables are less prone to rendering issues
-        # than interactive graph components. If you want ALL content visible without expanders,
-        # remove this st.expander as well.
         with st.expander(f"Click to View Detailed Data for Group {comp_index+1}", expanded=False):
             st.markdown(f"#### Detailed Data for Group {comp_index + 1}")
             df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
@@ -507,34 +512,59 @@ def main():
     st.title("AF OSI Procurement Fraud Tool V1")
 
     st.sidebar.header("Filters")
-    year = st.sidebar.number_input("Year", value=2023, step=1, help="Year to fetch SBIR awards from.")
-    agency = st.sidebar.text_input("Agency", "DOD", help="e.g., DOD, DOE, NIH. Case-insensitive.")
-    branch = st.sidebar.text_input("Branch (optional)", "USAF", help="e.g., USAF, Army, Navy. Leave blank for all branches within the agency.")
+    # Retrieve current filter values from session state
+    current_year = st.session_state.filter_year
+    current_agency = st.session_state.filter_agency
+    current_branch = st.session_state.filter_branch
 
-    run_clicked = st.sidebar.button("Run Analysis")
+    year = st.sidebar.number_input("Year", value=current_year, step=1, help="Year to fetch SBIR awards from.", key="input_year")
+    agency = st.sidebar.text_input("Agency", current_agency, help="e.g., DOD, DOE, NIH. Case-insensitive.", key="input_agency")
+    branch = st.sidebar.text_input("Branch (optional)", current_branch, help="e.g., USAF, Army, Navy. Leave blank for all branches within the agency.", key="input_branch")
 
-    if not run_clicked:
+    # Use a callback function for the button to set session state
+    def set_run_analysis_true():
+        st.session_state.run_analysis = True
+        # Also update the filter values in session state when button is clicked
+        st.session_state.filter_year = year
+        st.session_state.filter_agency = agency
+        st.session_state.filter_branch = branch
+
+    st.sidebar.button("Run Analysis", on_click=set_run_analysis_true)
+
+    # Detect if filter inputs have changed since the last "Run Analysis" click
+    # If they have, reset run_analysis to False to prompt user to click "Run Analysis" again
+    # This ensures that outdated results are not shown.
+    if (year != st.session_state.filter_year or
+        agency != st.session_state.filter_agency or
+        branch != st.session_state.filter_branch):
+        st.session_state.run_analysis = False
+
+
+    if not st.session_state.run_analysis:
         st.info("Adjust the filters in the sidebar and click 'Run Analysis' to fetch data.")
     else:
         st.sidebar.write("---")
         st.sidebar.write("Starting data fetch...")
 
         with st.spinner('Fetching awards data... This might take a while for large datasets.'):
-            awards = fetch_awards(agency=agency, year=year, rows=100)
+            # Pass values from session state for consistency
+            awards = fetch_awards(agency=st.session_state.filter_agency, year=st.session_state.filter_year, rows=100)
 
         if not awards:
             st.warning("No awards data fetched. Please check the filters and try again.")
+            st.session_state.run_analysis = False # Reset state if fetch fails
             return
 
-        if branch.strip():
-            filtered_awards = [award for award in awards if award.get("branch", "").upper() == branch.upper()]
-            st.sidebar.write(f"Total rows after branch filtering ({branch.upper()}): {len(filtered_awards)}")
+        if st.session_state.filter_branch.strip():
+            filtered_awards = [award for award in awards if award.get("branch", "").upper() == st.session_state.filter_branch.upper()]
+            st.sidebar.write(f"Total rows after branch filtering ({st.session_state.filter_branch.upper()}): {len(filtered_awards)}")
         else:
             filtered_awards = awards
             st.sidebar.write(f"Total rows fetched: {len(filtered_awards)}")
 
         if not filtered_awards:
             st.warning("No awards found after applying branch filter. Try a different branch or leave it blank.")
+            st.session_state.run_analysis = False # Reset state if no filtered awards
             return
 
         st.sidebar.write("Running duplicate analysis...")
