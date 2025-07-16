@@ -11,6 +11,7 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
+# --- RESTORED EXACT fetch_page FUNCTION (from your last provided code) ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
@@ -30,6 +31,7 @@ def fetch_page(start, agency, year, rows, page_number):
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
 
+# --- RESTORED EXACT fetch_awards FUNCTION (from your last provided code) ---
 def fetch_awards(agency="DOD", year=None, rows=100):
     results = []
     start = 0
@@ -59,6 +61,7 @@ def fetch_awards(agency="DOD", year=None, rows=100):
     st.sidebar.write(f"\nTotal rows collected before filtering: {len(results)}")
     return results
 
+# --- RESTORED EXACT similar_address FUNCTION (from your last provided code) ---
 def similar_address(addr1, addr2, threshold=0.8):
     if not addr1 or not addr2:
         return False
@@ -71,6 +74,7 @@ def similar_address(addr1, addr2, threshold=0.8):
         return False
     return SequenceMatcher(None, addr1_clean.lower(), addr2_clean.lower()).ratio() > threshold
 
+# --- RESTORED EXACT normalize_firm_name FUNCTION (from your last provided code) ---
 def normalize_firm_name(name):
     n = re.sub(r'\s+', ' ', name).strip()
     n = n.lower().replace(".", "").replace(",", "")
@@ -79,6 +83,7 @@ def normalize_firm_name(name):
             n = n[:-len(suffix)].strip()
     return n
 
+# --- RESTORED EXACT find_duplicate_components FUNCTION (from your last provided code) ---
 def find_duplicate_components(awards):
     awards = [award for award in awards if award is not None]
     n = len(awards)
@@ -171,7 +176,7 @@ def find_duplicate_components(awards):
     
     return components_with_reasons
 
-# --- MODIFIED display_graph_for_component with styling and fit=True changes ---
+# --- MODIFIED display_graph_for_component with ONLY aesthetic/layout changes ---
 def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
@@ -229,7 +234,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black"
 
             nodes.append(Node(id=firm_node_id_for_group, label=firm_name, 
-                              size=NODE_SIZE_FIRM_DEFAULT, # Use new constant
+                              size=NODE_SIZE_FIRM_DEFAULT, 
                               color=NODE_COLOR_FIRM, 
                               shape="dot", font={"size": 14},
                               borderWidth=firm_border_width, borderColor=firm_border_color))
@@ -346,18 +351,21 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
         collapsible=True,
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
-        # Physics adjusted again for better initial spread for smaller graphs
-        physics={"enabled": True, "solver": "barnesHut", 
-                 "barnesHut": {
-                     "gravitationalConstant": -200, # Less aggressive repulsion
-                     "centralGravity": 0.1, 
-                     "springLength": 100, # Slightly longer springs
-                     "springConstant": 0.05, 
-                     "damping": 0.09, 
-                     "avoidOverlap": 0.5
-                 }
-        },
-        fit=True, # Essential for initial fit
+        # --- Adjusted Physics and Disabled for predictability for small graphs ---
+        physics={"enabled": False}, # DISABLE PHYSICS FOR PREDICTABLE INITIAL LAYOUT
+        # If you want some physics for larger graphs, you'd need conditional logic here
+        # or very finely tuned parameters:
+        # physics={"enabled": True, "solver": "barnesHut", 
+        #          "barnesHut": {
+        #              "gravitationalConstant": -50, # Much less aggressive repulsion
+        #              "centralGravity": 0.05, 
+        #              "springLength": 100, 
+        #              "springConstant": 0.05, 
+        #              "damping": 0.09, 
+        #              "avoidOverlap": 0.5
+        #          }
+        # },
+        fit=True, # Ensure fit=True is here and should now work better without physics interfering
     )
 
     agraph(nodes=nodes, edges=edges, config=config)
