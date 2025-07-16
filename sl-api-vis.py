@@ -413,7 +413,13 @@ def display_results(awards):
             st.markdown(f"#### Detailed Data for Group {comp_index + 1}")
             df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
 
-            required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
+            # Update required_cols to include city, state, zip
+            required_cols = [
+                "firm", "company_url", "address1", "address2",
+                "city", "state", "zip", # <--- ADDED THESE
+                "poc_phone", "pi_phone", "ri_poc_phone", "award_link",
+                "agency", "branch", "award_amount"
+            ]
             for col in required_cols:
                 if col not in df.columns:
                     df[col] = "N/A"
@@ -422,7 +428,13 @@ def display_results(awards):
                 lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
             )
 
-            display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
+            # Update display_cols to include city, state, zip (adjust order as desired)
+            display_cols = [
+                "firm", "company_url", "address1", "address2",
+                "city", "state", "zip", # <--- ADDED THESE
+                "poc_phone", "pi_phone", "ri_poc_phone", "Link",
+                "agency", "branch", "award_amount"
+            ]
             df_display = df[[col for col in display_cols if col in df.columns]]
 
             st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
