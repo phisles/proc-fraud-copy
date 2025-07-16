@@ -30,15 +30,20 @@ def fetch_page(start, agency, year, rows, page_number):
         # Extract individual address components
         processed_data = []
         for award in data:
-            # Create new keys for address2, city, state, zip
-            award['address2'] = award.get('address2', '').strip()
-            award['city'] = award.get('city', '').strip()
-            award['state'] = award.get('state', '').strip()
-            award['zip'] = award.get('zip', '').strip()
-            processed_data.append(award)
+            # IMPORTANT: Add a check here to ensure 'award' is a dictionary
+            if isinstance(award, dict):
+                award['address2'] = award.get('address2', '').strip()
+                award['city'] = award.get('city', '').strip()
+                award['state'] = award.get('state', '').strip()
+                award['zip'] = award.get('zip', '').strip()
+                processed_data.append(award)
+            else:
+                st.sidebar.warning(f"Skipping unexpected award format on page {page_number}: {award}")
         return processed_data
     st.sidebar.write("Unexpected response format, stopping pagination.")
     return []
+
+# The rest of your code remains the same:
 
 # --- ORIGINAL WORKING fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
