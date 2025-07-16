@@ -203,8 +203,8 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
     SIMILAR_ADDRESS_EDGE_DASHES = [10, 5] # Dashed line
 
     # --- Node Sizes (Adjusted for prominence) ---
-    NODE_SIZE_FIRM = 35 # Slightly larger base for firms
-    NODE_SIZE_ATTR_DEFAULT = 15 # Significantly smaller for non-red-flag attributes
+    NODE_SIZE_FIRM_DEFAULT = 40 # Slightly larger base for firms (increased from 35)
+    NODE_SIZE_ATTR_DEFAULT = 20 # Increased from 15, to ensure better visibility for non-red-flag nodes
 
 
     firm_node_map = {} 
@@ -229,7 +229,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black"
 
             nodes.append(Node(id=firm_node_id_for_group, label=firm_name, 
-                              size=NODE_SIZE_FIRM, 
+                              size=NODE_SIZE_FIRM_DEFAULT, # Use new constant
                               color=NODE_COLOR_FIRM, 
                               shape="dot", font={"size": 14},
                               borderWidth=firm_border_width, borderColor=firm_border_color))
@@ -339,16 +339,25 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
     config = Config(
         width=800, 
-        height=600, # Increased height slightly for better fit
+        height=600, # Increased height to give more vertical space
         directed=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
         collapsible=True,
         node={"labelProperty": "label", "font": {"size": 12}},
         link={"labelProperty": "label", "renderLabel": True, "font": {"size": 10}},
-        # Physics adjusted slightly for better initial spread
-        physics={"enabled": True, "solver": "barnesHut", "barnesHut": {"gravitationalConstant": -500, "centralGravity": 0.05, "springLength": 100, "springConstant": 0.05, "damping": 0.09, "avoidOverlap": 0.5}},
-        fit=True, # Ensure fit=True is here
+        # Physics adjusted again for better initial spread for smaller graphs
+        physics={"enabled": True, "solver": "barnesHut", 
+                 "barnesHut": {
+                     "gravitationalConstant": -200, # Less aggressive repulsion
+                     "centralGravity": 0.1, 
+                     "springLength": 100, # Slightly longer springs
+                     "springConstant": 0.05, 
+                     "damping": 0.09, 
+                     "avoidOverlap": 0.5
+                 }
+        },
+        fit=True, # Essential for initial fit
     )
 
     agraph(nodes=nodes, edges=edges, config=config)
@@ -361,7 +370,7 @@ def display_results(awards):
         return
 
     total_duplicates_amount = 0.0
-    for comp_indices, _, _ in components_data: # Unpack to get just indices for sum
+    for comp_indices, _, _ in components_data: 
         comp_rows = [awards[i] for i in comp_indices]
         group_total = 0.0
         for award in comp_rows:
@@ -381,7 +390,7 @@ def display_results(awards):
     st.markdown("---") 
     st.header("Interactive Duplicate Graphs by Group")
 
-    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): # Unpack all three
+    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_data): 
         comp_rows = [awards[i] for i in comp_indices]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
         
