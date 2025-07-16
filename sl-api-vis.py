@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import streamlit as st
 import pandas as pd
-from streamlit_agraph import agraph, Node, Edge, Config
+from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
@@ -94,6 +94,7 @@ def find_duplicate_components(awards):
             graph[idx1].add(idx2)
             graph[idx2].add(idx1)
             # Store the reason for the connection
+            # Use tuple(sorted((idx1, idx2))) to ensure the key is consistent regardless of order
             edge_reasons[tuple(sorted((idx1, idx2)))].add(reason)
 
     url_to_indices = defaultdict(list)
@@ -101,11 +102,11 @@ def find_duplicate_components(awards):
         url = (award.get("company_url") or "").strip()
         if url and url.lower() != "none":
             url_to_indices[url].append(i)
-    for url, indices in url_to_indices.items(): # Iterate over URL and its indices
+    for url, indices in url_to_indices.items():
         for i in indices:
             for j in indices:
                 if i != j:
-                    add_edge_if_firms_differ(i, j, f"shared_url_{url}") # Reason includes the shared URL
+                    add_edge_if_firms_differ(i, j, f"shared_url:{url}") # Reason includes the shared URL
 
     phone_to_indices = defaultdict(list)
     for i, award in enumerate(awards):
@@ -113,11 +114,11 @@ def find_duplicate_components(awards):
             phone = (award.get(field) or "").strip()
             if phone and phone.lower() != "none":
                 phone_to_indices[phone].append(i)
-    for phone, indices in phone_to_indices.items(): # Iterate over Phone and its indices
+    for phone, indices in phone_to_indices.items():
         for i in indices:
             for j in indices:
                 if i != j:
-                    add_edge_if_firms_differ(i, j, f"shared_phone_{phone}") # Reason includes the shared Phone
+                    add_edge_if_firms_differ(i, j, f"shared_phone:{phone}") # Reason includes the shared Phone
 
     for i in range(n):
         addr_i = (awards[i].get("address1") or "").strip()
@@ -128,19 +129,25 @@ def find_duplicate_components(awards):
             if not addr_j or addr_j.lower() == "none":
                 continue
             if similar_address(addr_i, addr_j):
-                add_edge_if_firms_differ(i, j, f"similar_address_{addr_i}_{addr_j}") # Reason includes similar addresses
+                # For similar address, the reason needs to be more complex to trace the two addresses
+                add_edge_if_firms_differ(i, j, f"similar_address:{addr_i} vs {addr_j}")
 
     seen = set()
     components = []
-    # Also collect component-specific red flag details
     components_with_reasons = [] 
 
     for i in range(n):
         if i not in seen:
             stack = [i]
             comp_indices = []
-            comp_reasons = defaultdict(set) # Reasons for this specific component
+            comp_reasons_for_graph = defaultdict(set) # {(award_idx1, award_idx2): set("reason1", "reason2")}
             
+            # Keep track of which attribute strings are 'red flags' within this specific component
+            # (e.g., this address string was involved in a similar_address connection)
+            red_flag_attribute_strings = defaultdict(set) # { 'address': { '123 main st', '456 main st' }, 'url': { 'abc.com' } }
+            
+            temp_comp_edges = set() # To store (cur, neigh) pairs for this component
+
             while stack:
                 cur = stack.pop()
                 if cur in seen:
@@ -151,71 +158,58 @@ def find_duplicate_components(awards):
                 for neigh in graph[cur]:
                     if neigh not in seen:
                         stack.append(neigh)
-                    # Add reasons for edges within this component
+                    
                     pair = tuple(sorted((cur, neigh)))
                     if pair in edge_reasons:
-                        comp_reasons[pair].update(edge_reasons[pair])
+                        comp_reasons_for_graph[pair].update(edge_reasons[pair])
+                        temp_comp_edges.add(pair) # Store actual edges within component
+
+                        # Populate red_flag_attribute_strings based on reasons
+                        for reason in edge_reasons[pair]:
+                            if reason.startswith("shared_url:"):
+                                red_flag_attribute_strings['url'].add(reason.split(':', 1)[1])
+                            elif reason.startswith("shared_phone:"):
+                                red_flag_attribute_strings['phone'].add(reason.split(':', 1)[1])
+                            elif reason.startswith("similar_address:"):
+                                # For similar addresses, we flag BOTH addresses involved
+                                addrs = reason.split(':', 1)[1].split(' vs ')
+                                red_flag_attribute_strings['address'].add(addrs[0].strip())
+                                red_flag_attribute_strings['address'].add(addrs[1].strip())
 
             # Filter out components with less than 2 awards or less than 2 distinct firms
             if len(comp_indices) >= 2:
                 firm_set = set(normalize_firm_name(awards[idx]["firm"]) for idx in comp_indices)
                 if len(firm_set) > 1:
-                    components_with_reasons.append((comp_indices, comp_reasons))
+                    components_with_reasons.append((comp_indices, comp_reasons_for_graph, red_flag_attribute_strings))
     
     return components_with_reasons
 
-# --- MODIFIED display_graph_for_component to use reasons ---
-def display_graph_for_component(awards, component_indices, component_reasons):
+# --- MODIFIED display_graph_for_component to use reasons and red_flag_attribute_strings ---
+def display_graph_for_component(awards, component_indices, component_reasons, red_flag_attribute_strings):
     nodes = []
     edges = []
     
-    node_ids = set() # To ensure unique IDs within this single component's graph
+    node_ids = set() 
 
-    # Define base colors for different node types
-    NODE_COLOR_FIRM = "#4285F4" # Blue
-    NODE_COLOR_URL = "#34A853"  # Green
-    NODE_COLOR_ADDRESS = "#FBBC04" # Yellow
-    NODE_COLOR_PHONE = "#EA4335" # Red
+    NODE_COLOR_FIRM = "#4285F4" 
+    NODE_COLOR_URL = "#34A853"  
+    NODE_COLOR_ADDRESS = "#FBBC04"
+    NODE_COLOR_PHONE = "#EA4335"
 
-    # Highlight colors for shared (red flag) attributes
-    HIGHLIGHT_COLOR_EDGE = "#FF0000" # Bright Red for the connecting edges
+    HIGHLIGHT_COLOR_EDGE = "#FF0000" 
     HIGHLIGHT_EDGE_WIDTH = 3
-    HIGHLIGHT_NODE_BORDER_COLOR = "#FF0000" # Red border for firms
+    HIGHLIGHT_NODE_BORDER_COLOR = "#FF0000" 
     HIGHLIGHT_NODE_BORDER_WIDTH = 3
-    HIGHLIGHT_NODE_SIZE_INCREASE = 1.2 # Make attribute nodes slightly larger
+    HIGHLIGHT_NODE_SIZE_INCREASE = 1.2 
 
-    # Map firm_name to a single node ID for that firm within this group
     firm_node_map = {} 
 
-    # --- Identify firms that are part of a 'red flag' link directly ---
+    # --- Identify firms that are part of a 'red flag' link directly (for firm node border) ---
     firms_in_red_flag_link = set()
     for (idx1, idx2), reasons in component_reasons.items():
-        if reasons: # If there's any reason, these two awards are linked
+        if reasons:
             firms_in_red_flag_link.add(normalize_firm_name(awards[idx1]["firm"]))
             firms_in_red_flag_link.add(normalize_firm_name(awards[idx2]["firm"]))
-
-    # --- Identify which attribute nodes are direct 'red flags' (shared exactly) ---
-    # This logic is mostly for the original 'star' case if firms share an exact URL/Phone.
-    # For addresses, it's about similarity, so individual address nodes might not be starred.
-    shared_exact_urls = defaultdict(set)
-    shared_exact_phones = defaultdict(set)
-    # Addresses are handled by similar_address, so the "node sharing" is different.
-
-    for award_idx in component_indices:
-        award = awards[award_idx]
-        firm_name = normalize_firm_name(award.get("firm", "Unknown Firm"))
-        
-        company_url = (award.get("company_url") or "").strip()
-        if company_url and company_url.lower() != "none":
-            shared_exact_urls[company_url].add(firm_name)
-
-        for field in ["poc_phone", "pi_phone"]:
-            phone = (award.get(field) or "").strip()
-            if phone and phone.lower() != "none":
-                shared_exact_phones[phone].add(firm_name)
-
-    red_flag_exact_urls = {url for url, firms in shared_exact_urls.items() if len(firms) > 1}
-    red_flag_exact_phones = {phone for phone, firms in shared_exact_phones.items() if len(firms) > 1}
 
 
     for award_idx in component_indices:
@@ -224,29 +218,29 @@ def display_graph_for_component(awards, component_indices, component_reasons):
         
         firm_node_id_for_group = f"firm_node_{firm_name}"
         if firm_node_id_for_group not in node_ids:
-            # Highlight firm nodes that are part of any red flag link
             is_firm_red_flag = firm_name in firms_in_red_flag_link
             firm_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_firm_red_flag else 1
-            firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black" # Default border color
+            firm_border_color = HIGHLIGHT_NODE_BORDER_COLOR if is_firm_red_flag else "black"
 
             nodes.append(Node(id=firm_node_id_for_group, label=firm_name, size=30, color=NODE_COLOR_FIRM, shape="dot", font={"size": 14},
                               borderWidth=firm_border_width, borderColor=firm_border_color))
             node_ids.add(firm_node_id_for_group)
             firm_node_map[firm_name] = firm_node_id_for_group
 
-        current_firm_node_id = firm_node_map[firm_name]
+        current_firm_node_id = firm_node_map[firm_name] # This is the specific firm node in *this* graph
 
         # Add URL node and edge
         company_url = (award.get("company_url") or "").strip()
         if company_url and company_url.lower() != "none":
             url_id = f"url_node_{company_url}"
-            is_red_flag_exact_url = company_url in red_flag_exact_urls # This attribute is an exact shared "red flag"
+            # Check if this URL string itself is in the red_flag_attribute_strings for URLs
+            is_red_flag_url_attr = company_url in red_flag_attribute_strings['url']
 
             url_node_color = NODE_COLOR_URL
-            url_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_exact_url else 20
-            url_node_shape = "star" if is_red_flag_exact_url else "box"
-            url_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_exact_url else 1
-            url_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_exact_url else "black"
+            url_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_url_attr else 20
+            url_node_shape = "star" if is_red_flag_url_attr else "box"
+            url_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_url_attr else 1
+            url_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_url_attr else "black"
 
 
             if url_id not in node_ids:
@@ -254,21 +248,10 @@ def display_graph_for_component(awards, component_indices, component_reasons):
                                   borderWidth=url_node_border_width, borderColor=url_node_border_color))
                 node_ids.add(url_id)
             
-            # Highlight edges to ANY shared/similar attribute
-            edge_key = tuple(sorted((award_idx, other_award_idx))) # Placeholder to get the edge from reasons
-            
-            # The edge between current firm and THIS attribute could be a red flag.
-            # We need to check if ANY firm it's connected to has a red_flag reason
-            # This logic needs to be based on the relationship formed in find_duplicate_components
-            # For simplicity for now, if the *attribute node itself* is a red flag (exact match), highlight its edge.
-            # For addresses, we highlight based on the firm-to-firm connection if it was due to similar address.
-
-            # We need to map firm_node_ids to original award_indices to check component_reasons
-            # This is complex. A simpler way: if a firm-to-attribute connection *itself* is part of a reason, highlight it.
-
-            # Simplified: just highlight the edge if the attribute node is a 'red flag exact match'
-            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_exact_url else {"color": "#cccccc"}
-            edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_exact_url else 1
+            # Edge highlighting: if the connected attribute is a red flag, or if the firm is a red flag.
+            # Simplified: just highlight the edge if the attribute node is a 'red flag'
+            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_url_attr else {"color": "#cccccc"}
+            edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_url_attr else 1
             edges.append(Edge(source=current_firm_node_id, target=url_id, label="HAS_URL", type="arrow", color=edge_color, width=edge_width))
 
 
@@ -277,26 +260,14 @@ def display_graph_for_component(awards, component_indices, component_reasons):
         if address and address.lower() != "none":
             address_id = f"address_node_{address}"
             
-            # Check if this address (or one similar to it) was involved in a similar_address red flag
-            # This requires looking through component_reasons for this specific award's address
-            # We need to check if ANY (firm_award_idx, other_award_idx) reason in component_reasons
-            # involved this address string AND was a "similar_address" type.
-            is_red_flag_similar_address = False
-            for (idx1, idx2), reasons in component_reasons.items():
-                if award_idx in (idx1, idx2):
-                    for reason in reasons:
-                        if reason.startswith("similar_address_"):
-                            # This award's address was part of a similar_address link.
-                            is_red_flag_similar_address = True
-                            break
-                if is_red_flag_similar_address:
-                    break
+            # Check if this address string itself is in the red_flag_attribute_strings for addresses
+            is_red_flag_address_attr = address in red_flag_attribute_strings['address']
 
             address_node_color = NODE_COLOR_ADDRESS
-            address_node_size = 25 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_similar_address else 25
-            address_node_shape = "star" if is_red_flag_similar_address else "hexagon"
-            address_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_similar_address else 1
-            address_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_similar_address else "black"
+            address_node_size = 25 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_address_attr else 25
+            address_node_shape = "star" if is_red_flag_address_attr else "hexagon"
+            address_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_address_attr else 1
+            address_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_address_attr else "black"
 
 
             if address_id not in node_ids:
@@ -304,8 +275,8 @@ def display_graph_for_component(awards, component_indices, component_reasons):
                                   borderWidth=address_node_border_width, borderColor=address_node_border_color))
                 node_ids.add(address_id)
             
-            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_similar_address else {"color": "#cccccc"}
-            edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_similar_address else 1
+            edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_address_attr else {"color": "#cccccc"}
+            edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_address_attr else 1
 
             edges.append(Edge(source=current_firm_node_id, target=address_id, label="LOCATED_AT", type="arrow", color=edge_color, width=edge_width))
 
@@ -314,13 +285,14 @@ def display_graph_for_component(awards, component_indices, component_reasons):
             phone = (award.get(field) or "").strip()
             if phone and phone.lower() != "none":
                 phone_id = f"phone_node_{phone}"
-                is_red_flag_exact_phone = phone in red_flag_exact_phones
+                # Check if this phone string itself is in the red_flag_attribute_strings for phones
+                is_red_flag_phone_attr = phone in red_flag_attribute_strings['phone']
 
                 phone_node_color = NODE_COLOR_PHONE
-                phone_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_exact_phone else 20
-                phone_node_shape = "star" if is_red_flag_exact_phone else "triangle"
-                phone_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_exact_phone else 1
-                phone_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_exact_phone else "black"
+                phone_node_size = 20 * HIGHLIGHT_NODE_SIZE_INCREASE if is_red_flag_phone_attr else 20
+                phone_node_shape = "star" if is_red_flag_phone_attr else "triangle"
+                phone_node_border_width = HIGHLIGHT_NODE_BORDER_WIDTH if is_red_flag_phone_attr else 1
+                phone_node_border_color = HIGHLIGHT_COLOR_EDGE if is_red_flag_phone_attr else "black"
 
 
                 if phone_id not in node_ids:
@@ -328,8 +300,8 @@ def display_graph_for_component(awards, component_indices, component_reasons):
                                       borderWidth=phone_node_border_width, borderColor=phone_node_border_color))
                     node_ids.add(phone_id)
                 
-                edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_exact_phone else {"color": "#cccccc"}
-                edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_exact_phone else 1
+                edge_color = {"color": HIGHLIGHT_COLOR_EDGE} if is_red_flag_phone_attr else {"color": "#cccccc"}
+                edge_width = HIGHLIGHT_EDGE_WIDTH if is_red_flag_phone_attr else 1
 
                 edges.append(Edge(source=current_firm_node_id, target=phone_id, label="HAS_PHONE", type="arrow", color=edge_color, width=edge_width))
     
@@ -338,8 +310,8 @@ def display_graph_for_component(awards, component_indices, component_reasons):
         return
 
     config = Config(
-        width=800, # Smaller width for individual graphs
-        height=500, # Smaller height for individual graphs
+        width=800, 
+        height=500, 
         directed=True,
         nodeHighlightBehavior=True,
         highlightColor="#F7A7A6",
@@ -359,7 +331,7 @@ def display_results(awards):
         return
 
     total_duplicates_amount = 0.0
-    for comp_indices, _ in components_with_reasons: # Unpack to get just indices for sum
+    for comp_indices, _, _ in components_with_reasons: # Unpack to get just indices for sum
         comp_rows = [awards[i] for i in comp_indices]
         group_total = 0.0
         for award in comp_rows:
@@ -368,7 +340,7 @@ def display_results(awards):
             except ValueError:
                 group_total += 0
         total_duplicates_amount += group_total
-    duplicate_entities = sum(len(comp_indices) for comp_indices, _ in components_with_reasons)
+    duplicate_entities = sum(len(comp_indices) for comp_indices, _, _ in components_with_reasons)
     total_awards = len(awards)
 
     col1, col2, col3 = st.columns(3)
@@ -379,14 +351,14 @@ def display_results(awards):
     st.markdown("---") 
     st.header("Interactive Duplicate Graphs by Group")
 
-    for comp_index, (comp_indices, comp_reasons) in enumerate(components_with_reasons): # Unpack again
+    for comp_index, (comp_indices, comp_reasons, red_flag_attribute_strings) in enumerate(components_with_reasons): # Unpack again
         comp_rows = [awards[i] for i in comp_indices]
         distinct_firms = sorted(set(normalize_firm_name(row["firm"]) for row in comp_rows))
         
         with st.expander(f"Group {comp_index + 1}: Firms - {', '.join(distinct_firms)}", expanded=False):
             st.markdown(f"#### Graph for Group {comp_index + 1}")
-            # Pass reasons to the graph display function
-            display_graph_for_component(awards, comp_indices, comp_reasons) 
+            # Pass reasons and red_flag_attribute_strings to the graph display function
+            display_graph_for_component(awards, comp_indices, comp_reasons, red_flag_attribute_strings) 
             st.markdown("---")
             
             st.markdown(f"#### Details for Group {comp_index + 1}")
