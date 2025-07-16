@@ -11,73 +11,25 @@ st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
 
 BASE_URL = "https://api.www.sbir.gov/public/api/awards"
 
-# --- MODIFIED fetch_page FUNCTION ---
-# --- MODIFIED fetch_page FUNCTION to print raw response on error ---
+# --- ORIGINAL WORKING fetch_page FUNCTION ---
 def fetch_page(start, agency, year, rows, page_number):
     params = {"agency": agency, "rows": rows, "start": start}
     if year:
         params["year"] = year
     st.sidebar.write(f"Requesting Page {page_number} | Start Offset: {start}")
-
-    response = None
     try:
         response = requests.get(BASE_URL, params=params)
-        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-    except requests.exceptions.RequestException as e: # Catch all requests exceptions
-        error_message = f"API Request Error for page {page_number}: {e}"
-        if response is not None:
-            error_message += f"\nRaw response (HTTP/Request Error): {response.text[:1000]}..."
-        st.sidebar.error(error_message)
-        return []
-    except Exception as e: # Catch any other general errors during the request
-        st.sidebar.error(f"General error during request for page {page_number}: {e}")
-        return []
-
-    data = None
-    try:
-        data = response.json()
-    except requests.exceptions.JSONDecodeError as json_err:
-        st.sidebar.error(f"JSON Decoding Error for page {page_number}: {json_err}")
-        if response is not None:
-            st.sidebar.error(f"Raw response (JSON Error): {response.text[:2000]}...")
-        return []
     except Exception as e:
-        st.sidebar.error(f"Unexpected error parsing JSON for page {page_number}: {e}")
-        if response is not None:
-            st.sidebar.error(f"Raw response (JSON Parsing Error): {response.text[:2000]}...")
+        st.sidebar.write(f"Error fetching page {page_number}: {e}")
         return []
-
-    if not isinstance(data, list):
-        st.sidebar.error(
-            f"Top-level API response is not a list on page {page_number}. "
-            f"Expected list, got type: {type(data).__name__}, value: {str(data)[:1000]}..."
-        )
-        return [] # Return empty list if the top-level response isn't a list
-
-    processed_data = []
-    for i, award in enumerate(data): # Use enumerate to get index for better logging
-        if award is None:
-            st.sidebar.error(f"WARNING: Null 'award' item found at index {i} on page {page_number}. Skipping.")
-            continue # Skip this null item
-        
-        if not isinstance(award, dict):
-            st.sidebar.error(
-                f"WARNING: Non-dictionary item found at index {i} on page {page_number}. "
-                f"Expected dict, got type: {type(award).__name__}, value: {str(award)[:500]}"
-            )
-            continue # Skip this non-dictionary item
-
-        # If we reach here, 'award' is guaranteed to be a dictionary
-        award['address2'] = award.get('address2', '').strip()
-        award['city'] = award.get('city', '').strip()
-        award['state'] = award.get('state', '').strip()
-        award['zip'] = award.get('zip', '').strip()
-        processed_data.append(award)
-        
-    return processed_data
-
-
-# The rest of your code remains the same:
+    if response.status_code != 200:
+        st.sidebar.write(f"Error: Unable to fetch data (Status Code: {response.status_code})")
+        return []
+    data = response.json()
+    if isinstance(data, list):
+        return data
+    st.sidebar.write("Unexpected response format, stopping pagination.")
+    return []
 
 # --- ORIGINAL WORKING fetch_awards FUNCTION ---
 def fetch_awards(agency="DOD", year=None, rows=100):
@@ -313,35 +265,13 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
             edges.append(Edge(source=current_firm_node_id, target=url_id, label="url", type="arrow", color=edge_color, width=edge_width))
 
 
-        # Add Address node and edge (Now includes full address for display)
-        address1 = (award.get("address1") or "").strip()
-        address2 = (award.get("address2") or "").strip()
-        city = (award.get("city") or "").strip()
-        state = (award.get("state") or "").strip()
-        zip_code = (award.get("zip") or "").strip()
+        # Add Address node and edge
+        address = (award.get("address1") or "").strip()
+        if address and address.lower() != "none":
+            address_id = f"address_node_{address}"
+            address_node_id_map[address] = address_id # Store for later linking
 
-        # Concatenate address components for display
-        full_address = f"{address1}"
-        if address2:
-            full_address += f", {address2}"
-        if city or state or zip_code:
-            full_address += "\n" # New line for city, state, zip
-            if city:
-                full_address += f"{city}"
-            if state:
-                if city: full_address += ", "
-                full_address += f"{state}"
-            if zip_code:
-                if city or state: full_address += " "
-                full_address += f"{zip_code}"
-        
-        # Only create an address node if address1 exists
-        if address1 and address1.lower() != "none":
-            # Use address1 for the address_id map, but full_address for the node label
-            address_id = f"address_node_{address1}"
-            address_node_id_map[address1] = address_id # Store for later linking based on address1
-
-            is_red_flag_address_attr = address1 in red_flag_attribute_strings['address']
+            is_red_flag_address_attr = address in red_flag_attribute_strings['address']
 
             address_node_color = HIGHLIGHT_COLOR_NODE if is_red_flag_address_attr else NODE_COLOR_ADDRESS
             address_node_size = NODE_SIZE_ATTR_DEFAULT * HIGHLIGHT_NODE_SIZE_FACTOR if is_red_flag_address_attr else NODE_SIZE_ATTR_DEFAULT
@@ -351,7 +281,7 @@ def display_graph_for_component(awards, component_indices, component_reasons, re
 
 
             if address_id not in node_ids:
-                nodes.append(Node(id=address_id, label=full_address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 10}, # Smaller font
+                nodes.append(Node(id=address_id, label=address, size=address_node_size, color=address_node_color, shape=address_node_shape, font={"size": 10}, # Smaller font
                                   borderWidth=address_node_border_width, borderColor=address_node_border_color))
                 node_ids.add(address_id)
 
@@ -476,8 +406,7 @@ def display_results(awards):
             st.markdown(f"#### Detailed Data for Group {comp_index + 1}")
             df = pd.DataFrame(sorted(comp_rows, key=lambda a: normalize_firm_name(a.get("firm", ""))))
 
-            # Updated required_cols to include new address fields
-            required_cols = ["firm", "company_url", "address1", "address2", "city", "state", "zip", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
+            required_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "award_link", "agency", "branch", "award_amount"]
             for col in required_cols:
                 if col not in df.columns:
                     df[col] = "N/A"
@@ -486,8 +415,7 @@ def display_results(awards):
                 lambda x: f'<a href="https://www.sbir.gov/awards/{x}" target="_blank">link</a>' if x and x != "N/A" else "N/A"
             )
 
-            # Updated display_cols to include new address fields
-            display_cols = ["firm", "company_url", "address1", "address2", "city", "state", "zip", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
+            display_cols = ["firm", "company_url", "address1", "address2", "poc_phone", "pi_phone", "ri_poc_phone", "Link", "agency", "branch", "award_amount"]
             df_display = df[[col for col in display_cols if col in df.columns]]
 
             st.markdown(df_display.to_html(escape=False), unsafe_allow_html=True)
