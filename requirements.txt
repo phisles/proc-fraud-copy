@@ -43,6 +43,7 @@ scipy==1.15.1
 six==1.17.0
 smmap==5.0.2
 streamlit==1.42.0
+streamlit-agraph  # <--- ADD THIS LINE
 tenacity==9.0.0
 toml==0.10.2
 tornado==6.4.2
