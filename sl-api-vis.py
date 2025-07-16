@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import streamlit as st
 import pandas as pd
+import json
 from streamlit_agraph import agraph, Node, Edge, Config # Import for graph visualization
 
 st.set_page_config(layout="wide", page_title="SBIR Awards Duplicate Finder")
